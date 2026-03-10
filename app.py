@@ -100,21 +100,7 @@ st.markdown('<div class="main-header">🏗️ RC Beam Analysis & Design Pro</div
 # --- 5. SIDEBAR INPUTS ---
 with st.sidebar:
     params, n_spans, spans, sup_df, raw_user_loads_df, stable = input_handler.render_all_sidebar_inputs()
-
-    # 🛠️ SMART UNIT FIXER (ระบบแก้หน่วยอัตโนมัติ)
-    raw_b = params.get('b', 300)
-    raw_h = params.get('h', 500)
-    msg_unit = ""
-
-    if raw_b < 10: 
-        params['b'] = raw_b * 1000.0
-        msg_unit += f"Width: {raw_b}m ➔ {params['b']:.0f}mm \n"
-    if raw_h < 10:
-        params['h'] = raw_h * 1000.0
-        msg_unit += f"Depth: {raw_h}m ➔ {params['h']:.0f}mm"
-    
-    if msg_unit:
-        st.success(f"⚡ **Auto-Correct Units:**\n{msg_unit}")
+    # 🚫 ลบส่วนยุ่งเหยิง SMART UNIT FIXER ออกไปเรียบร้อย!
 
 # --- MAIN LOGIC ---
 if not stable:
@@ -137,7 +123,7 @@ else:
         sw_val = b_m * h_m * 24.0  
         
         if include_sw:
-            st.caption(f"ℹ️ **Added:** {sw_val:.2f} kN/m") # ไม่ต้องหาร 1000 แล้ว
+            st.caption(f"ℹ️ **Added:** {sw_val:.2f} kN/m") 
         else:
             st.caption("ℹ️ **Excluded:** 0.00 kN/m")
     
@@ -168,15 +154,13 @@ else:
 
         clean_user_loads = raw_user_loads_df.copy(deep=True)
         
-        # 🛠️ FIX 1: จัดระเบียบ Type และ Case ของ User Load ป้องกันปัญหา String ไม่ตรงกับที่ Solver ต้องการ
+        # 🛠️ FIX 1: จัดระเบียบ Type และ Case ของ User Load
         if not clean_user_loads.empty:
             if 'type' in clean_user_loads.columns:
-                # ถ้าขึ้นต้นด้วย P ให้เป็น 'P' (Point), นอกนั้นให้เป็น 'U' (Uniform)
                 clean_user_loads['type'] = clean_user_loads['type'].apply(
                     lambda x: 'P' if str(x).upper().startswith('P') else 'U'
                 )
             if 'case' in clean_user_loads.columns:
-                # ถ้ามีตัว L ให้ถือเป็น 'LL' (Live Load), นอกนั้นให้เป็น 'DL' (Dead Load)
                 clean_user_loads['case'] = clean_user_loads['case'].apply(
                     lambda x: 'LL' if 'L' in str(x).upper() and 'D' not in str(x).upper() else 'DL'
                 )
@@ -190,7 +174,7 @@ else:
                     'mag': sw_val,  # หน่วย kN/m
                     'dist': spans[i], 
                     'd_start': 0, 
-                    'case': 'DL'    # 🛠️ FIX 2: เปลี่ยนจาก 'SW' เป็น 'DL' เพื่อให้ Load Processor นำไปคูณกับ Dead Load Factor ได้ถูกต้อง
+                    'case': 'DL'    # เปลี่ยนจาก 'SW' เป็น 'DL' 
                 })
             df_sw_only = pd.DataFrame(sw_rows)
             final_calc_loads = pd.concat([clean_user_loads, df_sw_only], ignore_index=True)
@@ -221,7 +205,7 @@ else:
                 st.info(status_msg)
             with cols_chk[1]:
                 total_factored_load = calc_loads_ult['mag'].sum() if not calc_loads_ult.empty else 0
-                st.caption(f"🔍 **Total Factored Load (Check):** {total_factored_load:,.2f} kN") # ถอด /1000 ออก
+                st.caption(f"🔍 **Total Factored Load (Check):** {total_factored_load:,.2f} kN") 
 
             with st.expander("🛠️ Debug: Check Loads"):
                 st.write(f"**Calculated SW (kN/m):** {sw_val:.2f} (from b={params['b']}mm, h={params['h']}mm)")
@@ -238,10 +222,9 @@ else:
                 loads=calc_loads_ult if not is_service else calc_loads_svc, 
                 reactions=R_plot
             )
-            # แก้ไขตรงนี้จาก use_container_width=True เป็น width='stretch'
             st.plotly_chart(fig, width='stretch', key=unique_chart_key)
             
-            # Key Metrics (ถอด /1000 ออกหมดแล้วเพราะค่ามาเป็น kN/kNm)
+            # Key Metrics
             c_m1, c_m2, c_m3 = st.columns(3)
             c_m1.metric("Max Shear (V_max)", f"{max(abs(V_plot)):.2f} kN")
             c_m2.metric("Max Moment (M_max)", f"{max(M_plot):.2f} kNm")
@@ -261,7 +244,7 @@ else:
                 mask_u = (x_ult >= s_start - 1e-6) & (x_ult <= s_end + 1e-6)
                 if not mask_u.any(): continue
 
-                # Design Forces (ถอด /1000 ออก)
+                # Design Forces
                 mu_pos = max(0.0, M_ult[mask_u].max())
                 mu_neg = abs(min(0.0, M_ult[mask_u].min()))
                 vu_max = abs(V_ult[mask_u]).max()
@@ -435,7 +418,6 @@ else:
                 c_boq3.metric("Formwork", f"{total_form_area:.2f} m²")
                 c_boq4.metric("TOTAL COST", f"{df_boq['Amount (THB)'].sum():,.0f} ฿", border=True)
                 
-                # แก้ไขตรงนี้จาก use_container_width=True เป็น width='stretch'
                 st.dataframe(
                     df_boq.style.format({"Quantity": "{:.2f}", "Unit Price": "{:,.2f}", "Amount (THB)": "{:,.2f}"}), 
                     width='stretch', hide_index=True
