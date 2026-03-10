@@ -238,7 +238,8 @@ else:
                 loads=calc_loads_ult if not is_service else calc_loads_svc, 
                 reactions=R_plot
             )
-            st.plotly_chart(fig, use_container_width=True, key=unique_chart_key)
+            # แก้ไขตรงนี้จาก use_container_width=True เป็น width='stretch'
+            st.plotly_chart(fig, width='stretch', key=unique_chart_key)
             
             # Key Metrics (ถอด /1000 ออกหมดแล้วเพราะค่ามาเป็น kN/kNm)
             c_m1, c_m2, c_m3 = st.columns(3)
@@ -434,9 +435,10 @@ else:
                 c_boq3.metric("Formwork", f"{total_form_area:.2f} m²")
                 c_boq4.metric("TOTAL COST", f"{df_boq['Amount (THB)'].sum():,.0f} ฿", border=True)
                 
+                # แก้ไขตรงนี้จาก use_container_width=True เป็น width='stretch'
                 st.dataframe(
                     df_boq.style.format({"Quantity": "{:.2f}", "Unit Price": "{:,.2f}", "Amount (THB)": "{:,.2f}"}), 
-                    use_container_width=True, hide_index=True
+                    width='stretch', hide_index=True
                 )
 
     except Exception as e:
