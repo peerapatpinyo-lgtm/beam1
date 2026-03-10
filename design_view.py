@@ -1,3 +1,4 @@
+#design_view.py
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
@@ -188,18 +189,19 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
                 mode='lines', line=dict(color=color, width=2), hoverinfo='skip'
             ), row=1, col=1)
             
-            # 3. Arrows
+            # 3. Arrows (แก้ไข: ให้หางลูกศรเกาะเส้น Top Line พอดีโดยใช้พิกัดข้อมูล Data Coordinates)
             n_arrows = max(2, int(dist_val * 1.5)) 
             arrow_x_points = np.linspace(x_s, x_e, n_arrows + 2)[1:-1]
             for ax_x in arrow_x_points:
                 fig.add_annotation(
-                    x=ax_x, y=0, ax=0, ay=-30*ratio, # Scale arrow slightly
-                    xref="x1", yref="y1",
+                    x=ax_x, y=0, 
+                    ax=ax_x, ay=h_vis,  # บังคับหางลูกศรให้อยู่ที่พิกัด y = h_vis
+                    xref="x1", yref="y1", axref="x1", ayref="y1", # อ้างอิงแกน x1, y1 ทั้งหัวและหาง
                     showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1, arrowcolor=color,
                     row=1, col=1
                 )
             
-            # 4. Label
+            # 4. Label (ขยับ yshift ลงมานิดหน่อยเพื่อไม่ให้ลอยไป)
             label_text = f"<b>w={mag_kN:.2f} kN/m</b>"
             if case_type == 'SW':
                 label_text = f"<b>SW={mag_kN:.2f} kN/m</b>"
@@ -207,7 +209,7 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
             fig.add_annotation(
                 x=(x_s+x_e)/2, y=h_vis,
                 text=label_text,
-                showarrow=False, yshift=10, font=dict(color=color), row=1, col=1
+                showarrow=False, yshift=15, font=dict(color=color), row=1, col=1
             )
 
     # ROW 2: SHEAR FORCE
