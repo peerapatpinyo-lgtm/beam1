@@ -147,7 +147,8 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
         
         # Calculate visual height ratio (0.15 to 0.6)
         ratio = abs(mag_raw) / max_mag
-        h_vis = 0.15 + (ratio * 0.45) 
+        #แก้ไข: ปรับสัดส่วนความหนาให้ดูเพรียวขึ้น (จากเดิม 0.15-0.6 เป็น 0.1-0.35 ของพื้นที่กราฟ)
+        h_vis = 0.1 + (ratio * 0.25) 
 
         case_type = l.get('case', 'DL')
         if case_type == 'LL':
@@ -159,7 +160,8 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
         if l['type'] == 'P':
             x_loc = start_x_span + float(l['d_start']) 
             # Arrow scale logic
-            arrow_len = 40 * (0.5 + 0.5*ratio) # Pixel length
+            # แก้ไข: ปรับลดความยาวลูกศร Point load ให้ดูได้สัดส่วนขึ้น (ลดจาก 40px เป็น 30px พื้นฐาน)
+            arrow_len = 30 * (0.5 + 0.5*ratio) # Pixel length
             
             fig.add_annotation(
                 x=x_loc, y=0, 
@@ -189,19 +191,19 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
                 mode='lines', line=dict(color=color, width=2), hoverinfo='skip'
             ), row=1, col=1)
             
-            # 3. Arrows (แก้ไข: ให้หางลูกศรเกาะเส้น Top Line พอดีโดยใช้พิกัดข้อมูล Data Coordinates)
+            # 3. Arrows (แก้ไข: บังคับให้หัวลูกศร (ay) เกาะพิกัด h_vis เสมอโดยอ้างอิง Data coordinates เพื่อความสวยงาม)
             n_arrows = max(2, int(dist_val * 1.5)) 
             arrow_x_points = np.linspace(x_s, x_e, n_arrows + 2)[1:-1]
             for ax_x in arrow_x_points:
                 fig.add_annotation(
                     x=ax_x, y=0, 
-                    ax=ax_x, ay=h_vis,  # บังคับหางลูกศรให้อยู่ที่พิกัด y = h_vis
-                    xref="x1", yref="y1", axref="x1", ayref="y1", # อ้างอิงแกน x1, y1 ทั้งหัวและหาง
+                    ax=ax_x, ay=h_vis,  # บังคับหางลูกศรที่พิกัด y = h_vis (Data Coordinates)
+                    xref="x1", yref="y1", axref="x1", ayref="y1",
                     showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1, arrowcolor=color,
                     row=1, col=1
                 )
             
-            # 4. Label (ขยับ yshift ลงมานิดหน่อยเพื่อไม่ให้ลอยไป)
+            # 4. Label
             label_text = f"<b>w={mag_kN:.2f} kN/m</b>"
             if case_type == 'SW':
                 label_text = f"<b>SW={mag_kN:.2f} kN/m</b>"
@@ -209,7 +211,7 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
             fig.add_annotation(
                 x=(x_s+x_e)/2, y=h_vis,
                 text=label_text,
-                showarrow=False, yshift=15, font=dict(color=color), row=1, col=1
+                showarrow=False, yshift=10, font=dict(color=color), row=1, col=1
             )
 
     # ROW 2: SHEAR FORCE
