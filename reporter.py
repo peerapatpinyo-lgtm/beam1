@@ -1,0 +1,219 @@
+import streamlit as st
+import numpy as np
+
+def render_calculation_report(res):
+    """
+    Ultra-Detailed ACI 318-19 Compliance Report.
+    Includes Clause References, Substitutions, Limit States, and Crack Width Control.
+    """
+    # --- Data Extraction ---
+    # ใช้ .get() เพื่อป้องกัน Error กรณี key ไม่ครบ
+    idx = res.get('span_id', 0) + 1
+    L_m = res.get('L', 0)
+    b = res.get('b', 200) 
+    h = res.get('h', 400) 
+    cov = res.get('cover', 25)
+    fc = res.get('fc', 24)
+    fy = res.get('fy', 400)
+    
+    Mu = res.get('Mu_pos', 0)
+    Vu = res.get('Vu_max', 0)
+    Ma = res.get('Ma_pos_svc', 0)    
+    delta_svc = res.get('delta_svc_mm', 0) 
+    
+    # Extract Reinforcement Data safely
+    bot = res.get('bot', {})
+    bot_n = bot.get('n', 0)
+    bot_db = bot.get('db', 12)
+    
+    shear = res.get('shear', {})
+    stir_db = shear.get('db', res.get('stir_db', 9))
+    stir_s = shear.get('s', res.get('stir_s', 150))
+
+    # --- Constants & ACI Parameters ---
+    Es = 200000.0 
+    Ec = 4700 * np.sqrt(fc)
+    
+    # ACI 22.2.2.4.3: Beta1 calculation
+    if fc <= 28:
+        beta1 = 0.85
+    elif fc >= 55:
+        beta1 = 0.65
+    else:
+        beta1 = 0.85 - (0.05 * (fc - 28) / 7)
+
+    st.markdown(f"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
+    st.markdown(f"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
+    st.divider()
+
+    # =========================================================
+    # 1. MATERIAL & SECTION PROPERTIES (ACI 19.2 & 20.2)
+    # =========================================================
+    st.markdown("### 1. Materials & Geometry (Ref: ACI 19.2 & 20.2)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("**Concrete Strength Properties:**")
+        st.latex(rf"f'_c = {fc} \text{{ MPa}}")
+        st.latex(rf"E_c = 4700\sqrt{{f'_c}} = {Ec:.0f} \text{{ MPa}}")
+        st.latex(rf"\beta_1 = {beta1:.3f} \quad \text{{(ACI 22.2.2.4.3)}}")
+    with c2:
+        st.write("**Steel Reinforcement:**")
+        st.latex(rf"f_y = {fy} \text{{ MPa}}, \quad E_s = 200,000 \text{{ MPa}}")
+        st.latex(rf"\text{{Section: }} {b:.0f} \times {h:.0f} \text{{ mm}}")
+
+    # =========================================================
+    # 2. FLEXURAL CAPACITY AUDIT (ACI 22.2)
+    # =========================================================
+    st.markdown("### 2. Flexural Strength Audit (Ref: ACI 22.2)")
+    
+    # 2.1 Effective Depth (d)
+    d = h - cov - stir_db - (bot_db/2)
+    st.markdown("**2.1 Effective Depth Calculation**")
+    st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
+    st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
+
+    # 2.2 Minimum Reinforcement (ACI 9.6.1.2)
+    st.markdown("**2.2 Minimum Steel Check (Ref: ACI 9.6.1.2)**")
+    As = bot_n * (np.pi * (bot_db/2)**2)
+    As_min_1 = (0.25 * np.sqrt(fc) / fy) * b * d
+    As_min_2 = (1.4 / fy) * b * d
+    As_min = max(As_min_1, As_min_2)
+    
+    st.latex(rf"A_{{s,min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}} b_w d, \frac{{1.4}}{{f_y}} b_w d \right) = \mathbf{{{As_min:.1f}}}\text{{ mm}}^2")
+    if As >= As_min:
+        st.caption(f"✅ Provided As ({As:.1f} mm²) > Min As ({As_min:.1f} mm²)")
+    else:
+        st.error(f"❌ Provided As ({As:.1f} mm²) < Min As ({As_min:.1f} mm²)")
+
+    # 2.3 Tension-Controlled & Ductility (ACI 21.2.2)
+    st.markdown("**2.3 Strain Compatibility & Strength Reduction ($\phi$)**")
+    
+    # Calculate a (Depth of equivalent rectangular stress block)
+    # Prevent division by zero if As is 0 (though unlikely in design result)
+    if As > 0:
+        a = (As * fy) / (0.85 * fc * b)
+        c_neutral = a / beta1
+    else:
+        a = 0
+        c_neutral = 0
+
+    # Calculate Strain
+    if c_neutral > 0:
+        epsilon_t = 0.003 * (d - c_neutral) / c_neutral
+    else:
+        epsilon_t = 999 # Infinite ductility implies no compression block
+
+    # Determine Phi (Table 21.2.2)
+    if epsilon_t >= 0.005:
+        phi_f = 0.90
+        state = "Tension-Controlled (Ductile)"
+    elif epsilon_t <= 0.002:
+        phi_f = 0.65
+        state = "Compression-Controlled (Brittle)"
+    else:
+        phi_f = 0.65 + 0.25 * (epsilon_t - 0.002) / 0.003
+        state = "Transition Zone"
+
+    st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{As:.1f} \cdot {fy}}}{{0.85 \cdot {fc} \cdot {b}}} = {a:.2f}\text{{ mm}}")
+    st.latex(rf"c = a/\beta_1 = {a:.2f}/{beta1:.3f} = {c_neutral:.2f}\text{{ mm}}")
+    st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d - c}}{{c}} \right) = \mathbf{{{epsilon_t:.5f}}}")
+    st.info(f"**Result:** {state} | $\phi = {phi_f:.3f}$")
+
+    # 2.4 Nominal vs Factored Moment
+    Mn = As * fy * (d - a/2) * 1e-6
+    phiMn = phi_f * Mn
+    st.markdown("**2.4 Ultimate Strength Verification**")
+    st.latex(rf"M_n = A_s f_y (d - a/2) = {As:.0f} \cdot {fy} \cdot ({d:.1f} - {a/2:.1f}) \cdot 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
+    st.latex(rf"\phi M_n = {phi_f:.2f} \cdot {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
+    
+    if phiMn >= Mu:
+        st.success(rf"$\phi M_n ({phiMn:.2f}) \ge M_u ({Mu:.2f})$ — Capacity OK")
+    else:
+        st.error(rf"$\phi M_n ({phiMn:.2f}) < M_u ({Mu:.2f})$ — INSUFFICIENT")
+
+    # =========================================================
+    # 3. SHEAR CAPACITY AUDIT (ACI 22.5)
+    # =========================================================
+    st.divider()
+    st.markdown("### 3. Shear Strength Audit (Ref: ACI 22.5)")
+    st.latex(rf"V_u = {Vu:.2f}\text{{ kN}}")
+    
+    Vc = (0.17 * 1.0 * np.sqrt(fc) * b * d) / 1000
+    Av = 2 * (np.pi * (stir_db/2)**2) 
+    
+    if stir_s > 0:
+        Vs = (Av * fy * d / stir_s) / 1000
+    else:
+        Vs = 0
+        
+    phiVn = 0.75 * (Vc + Vs)
+
+    st.latex(rf"V_c = 0.17 \lambda \sqrt{{f'_c}} b_w d = {Vc:.2f}\text{{ kN}}")
+    st.latex(rf"V_s = \frac{{A_v f_{{yt}} d}}{{s}} = {Vs:.2f}\text{{ kN}}")
+    st.latex(rf"\phi V_n = 0.75(V_c + V_s) = \mathbf{{{phiVn:.2f}}}\text{{ kN}}")
+    
+    s_max = min(d/2, 600)
+    st.markdown(rf"**ACI Spacing Limit:** $s_{{max}} = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
+    if stir_s <= s_max:
+        st.caption(f"✅ Spacing OK ({stir_s} mm)")
+    else:
+        st.error(f"❌ Spacing exceeds limit ({s_max:.0f} mm)")
+
+    # =========================================================
+    # 4. SERVICEABILITY AUDIT (ACI 24.2 & Gergely-Lutz)
+    # =========================================================
+    st.divider()
+    st.markdown("### 4. Serviceability Audit (Ref: ACI 24.2)")
+    
+    # --- 4.1 Deflection ---
+    st.markdown("#### 4.1 Deflection Control")
+    L_mm = L_m * 1000
+    allowable_def = L_mm / 240
+    
+    st.write(f"**Limit:** Instantaneous Deflection (L/240):")
+    st.latex(rf"\Delta_{{allow}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
+    st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
+
+    if abs(delta_svc) <= allowable_def:
+        st.success("✅ Deflection: PASS")
+    else:
+        st.warning("⚠️ Deflection: FAIL (Increase section stiffness)")
+
+    # --- 4.2 Crack Width (Gergely-Lutz) ---
+    st.markdown("#### 4.2 Crack Width Control (Gergely-Lutz)")
+    
+    
+    if 'crack' in res:
+        crack_data = res['crack']
+        w_val = crack_data.get('w', 0)
+        w_lim = crack_data.get('limit', 0.4)
+        status = crack_data.get('status', 'N/A')
+        
+        st.markdown("Based on Gergely-Lutz equation (Modified for SI):")
+        st.latex(r"w = 0.076 \beta f_s \sqrt[3]{d_c A}")
+        
+        c_cr1, c_cr2 = st.columns(2)
+        with c_cr1:
+            st.markdown(f"""
+            **Parameters:**
+            - Service Moment ($M_s$): {Ma:.2f} kNm
+            - Cover ($d_c$): {cov} mm
+            - Steel ($f_y$): {fy} MPa
+            """)
+        with c_cr2:
+            st.markdown(f"""
+            **Results:**
+            - Calculated Width ($w$): **{w_val:.3f} mm**
+            - Limit: {w_lim} mm
+            - Status: **{status}**
+            """)
+            
+        if w_val > w_lim:
+             st.error(f"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
+        else:
+             st.success(f"✅ Crack width control passed.")
+    else:
+        st.info("Crack width analysis not available for this run.")
+
+    st.divider()
+    st.caption("Generated by Pro RC Beam Design Software | ACI 318-19 Compliant")
