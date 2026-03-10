@@ -35,9 +35,7 @@ def get_rebar_weight(d_mm):
     return (d_mm ** 2) / 162.0
 
 def plot_cross_section_fixed(b, h, cover, top_layers, bot_layers, shear_res):
-    """
-    Generate a Matplotlib figure for the cross-section.
-    """
+    """Generate a Matplotlib figure for the cross-section."""
     fig, ax = plt.subplots(figsize=(4, 5))
     
     # Concrete Section
@@ -70,7 +68,6 @@ def plot_cross_section_fixed(b, h, cover, top_layers, bot_layers, shear_res):
                 circle = patches.Circle((start_x + i*gap, y_pos), radius=dia/2, color=color, zorder=10)
                 ax.add_patch(circle)
         else:
-            # Single bar centered
             circle = patches.Circle((b/2, y_pos), radius=dia/2, color=color, zorder=10)
             ax.add_patch(circle)
 
@@ -80,8 +77,6 @@ def plot_cross_section_fixed(b, h, cover, top_layers, bot_layers, shear_res):
 
     # Annotations
     text_x = b + (b * 0.1)
-    
-    # Count total bars
     n_top = sum(l['n'] for l in top_layers)
     n_bot = sum(l['n'] for l in bot_layers)
     d_top = top_layers[0]['db'] if top_layers else 0
@@ -104,30 +99,22 @@ st.markdown('<div class="main-header">🏗️ RC Beam Analysis & Design Pro</div
 
 # --- 5. SIDEBAR INPUTS ---
 with st.sidebar:
-    # Get raw user inputs from input_handler module
     params, n_spans, spans, sup_df, raw_user_loads_df, stable = input_handler.render_all_sidebar_inputs()
 
-    # ==========================================================
     # 🛠️ SMART UNIT FIXER (ระบบแก้หน่วยอัตโนมัติ)
-    # ==========================================================
-    # เช็คว่า user เผลอกรอกหน่วย "เมตร" (ค่าน้อยกว่า 10) หรือไม่
-    # ถ้าใช่ -> แปลงเป็น mm ให้ทันที เพื่อให้โค้ดส่วนอื่นทำงานถูกต้อง
-    
     raw_b = params.get('b', 300)
     raw_h = params.get('h', 500)
     msg_unit = ""
 
     if raw_b < 10: 
         params['b'] = raw_b * 1000.0
-        msg_unit += f"Width: {raw_b}m ➔ {params['b']:.0f}mm "
-    
+        msg_unit += f"Width: {raw_b}m ➔ {params['b']:.0f}mm \n"
     if raw_h < 10:
         params['h'] = raw_h * 1000.0
         msg_unit += f"Depth: {raw_h}m ➔ {params['h']:.0f}mm"
     
     if msg_unit:
         st.success(f"⚡ **Auto-Correct Units:**\n{msg_unit}")
-    # ==========================================================
 
 # --- MAIN LOGIC ---
 if not stable:
@@ -140,19 +127,17 @@ else:
         mode_select = st.radio("Display Mode:", ["Ultimate Strength (Design)", "Service Load (Check Deflection)"], index=0)
         
         st.markdown("---")
-        # [CRITICAL CHECKBOX]
         include_sw = st.checkbox("➕ Include Beam Self-weight", value=True)
         
-        # --- FIXED: Self-Weight Calculation (Unit: N/m) ---
-        # ตอนนี้ params['b'] และ params['h'] เป็น mm แน่นอนแล้วจาก Smart Fix ด้านบน
+        # --- FIXED: Self-Weight Calculation (Unit: kN/m) ---
         b_m = params['b'] / 1000.0
         h_m = params['h'] / 1000.0
         
-        # คอนกรีต 24000 N/m3
-        sw_val = b_m * h_m * 24000.0  
+        # คอนกรีต 24.0 kN/m3 (ใช้หน่วย kN เป็นมาตรฐาน)
+        sw_val = b_m * h_m * 24.0  
         
         if include_sw:
-            st.caption(f"ℹ️ **Added:** {sw_val/1000:.2f} kN/m")
+            st.caption(f"ℹ️ **Added:** {sw_val:.2f} kN/m") # ไม่ต้องหาร 1000 แล้ว
         else:
             st.caption("ℹ️ **Excluded:** 0.00 kN/m")
     
@@ -160,34 +145,35 @@ else:
         st.markdown("### 🔢 Load Factors")
         c1, c2 = st.columns(2)
         
-        # Determine Factors and Display Mode
-        if "Service" in mode_select:
-            f_dl, f_ll = 1.0, 1.0
-            tag, is_service = "Service Limit State", True
-            # Show disabled inputs for visual reference
-            c1.disabled = True
-            c2.disabled = True
-        else:
-            f_dl = c1.number_input("Dead Load Factor (DL)", 1.0, 2.0, 1.4, 0.1)
-            f_ll = c2.number_input("Live Load Factor (LL)", 1.0, 2.0, 1.7, 0.1)
-            tag, is_service = "Ultimate Limit State", False
+        is_service = "Service" in mode_select
+        tag = "Service Limit State" if is_service else "Ultimate Limit State"
+        
+        f_dl = c1.number_input(
+            "Dead Load Factor (DL)", 1.0, 2.0, 
+            value=1.0 if is_service else 1.4, 
+            step=0.1, 
+            disabled=is_service
+        )
+        f_ll = c2.number_input(
+            "Live Load Factor (LL)", 1.0, 2.0, 
+            value=1.0 if is_service else 1.7, 
+            step=0.1, 
+            disabled=is_service
+        )
 
     try:
         # ==========================================
         # ⚡ LOAD PREPARATION
         # ==========================================
-        
-        # 1. Use a local copy of user loads
         clean_user_loads = raw_user_loads_df.copy(deep=True)
         
-        # 2. Add Self-Weight if selected
         if include_sw:
             sw_rows = []
             for i in range(n_spans):
                 sw_rows.append({
                     'span_index': i, 
                     'type': 'U', 
-                    'mag': sw_val,  # หน่วย N/m (หลักพัน)
+                    'mag': sw_val,  # หน่วย kN/m
                     'dist': spans[i], 
                     'd_start': 0, 
                     'case': 'SW'
@@ -200,15 +186,12 @@ else:
             status_msg = "❌ **Self-Weight Excluded (Pure User Loads)**"
 
         # --- RUN SOLVER ---
-        # 1. Ultimate Run (Factored)
         calc_loads_ult = rc_load_processor.prepare_load_dataframe(final_calc_loads, n_spans, spans, params, f_dl, f_ll)
         x_ult, M_ult, V_ult, D_ult, R_ult = solver.solve_beam(spans, sup_df, calc_loads_ult, params)
         
-        # 2. Service Run (Unfactored 1.0)
         calc_loads_svc = rc_load_processor.prepare_load_dataframe(final_calc_loads, n_spans, spans, params, 1.0, 1.0)
         x_svc, M_svc, V_svc, D_svc, R_svc = solver.solve_beam(spans, sup_df, calc_loads_svc, params)
 
-        # Select data for plotting based on mode
         x_plot, M_plot, V_plot, D_plot, R_plot = (x_svc, M_svc, V_svc, D_svc, R_svc) if is_service else (x_ult, M_ult, V_ult, D_ult, R_ult)
 
         # --- TABS START ---
@@ -219,18 +202,16 @@ else:
         with tab1:
             st.subheader(f"📈 Analysis Diagrams ({tag})")
             
-            # Info Bar
             cols_chk = st.columns([1, 4])
             with cols_chk[0]:
                 st.info(status_msg)
             with cols_chk[1]:
-                total_factored_N = calc_loads_ult['mag'].sum() if not calc_loads_ult.empty else 0
-                st.caption(f"🔍 **Total Factored Load (Check):** {total_factored_N/1000:,.2f} kN")
+                total_factored_load = calc_loads_ult['mag'].sum() if not calc_loads_ult.empty else 0
+                st.caption(f"🔍 **Total Factored Load (Check):** {total_factored_load:,.2f} kN") # ถอด /1000 ออก
 
-            # Debugger
             with st.expander("🛠️ Debug: Check Loads"):
-                st.write(f"**Calculated SW (N/m):** {sw_val:.2f} (from b={params['b']}mm, h={params['h']}mm)")
-                st.write("**Processed Loads (Entering Solver - Unit N):**", calc_loads_ult)
+                st.write(f"**Calculated SW (kN/m):** {sw_val:.2f} (from b={params['b']}mm, h={params['h']}mm)")
+                st.write("**Processed Loads (Entering Solver - Unit kN):**", calc_loads_ult)
 
             # Main Graph
             df_for_plot = pd.DataFrame({'x': x_plot, 'moment': M_plot, 'shear': V_plot, 'deflection': D_plot * 1000})
@@ -245,37 +226,33 @@ else:
             )
             st.plotly_chart(fig, use_container_width=True, key=unique_chart_key)
             
-            # Key Metrics
+            # Key Metrics (ถอด /1000 ออกหมดแล้วเพราะค่ามาเป็น kN/kNm)
             c_m1, c_m2, c_m3 = st.columns(3)
-            c_m1.metric("Max Shear (V_max)", f"{max(abs(V_plot))/1000:.2f} kN")
-            c_m2.metric("Max Moment (M_max)", f"{max(M_plot)/1000:.2f} kNm")
+            c_m1.metric("Max Shear (V_max)", f"{max(abs(V_plot)):.2f} kN")
+            c_m2.metric("Max Moment (M_max)", f"{max(M_plot):.2f} kNm")
             c_m3.metric("Max Deflection", f"{max(abs(D_plot))*1000:.2f} mm")
             
         # ================= TAB 2: CONCRETE DESIGN =================
         with tab2:
             st.header("🏗️ Reinforcement Detailing")
             
-            # Constants for Design
             b_mm, h_mm = rc_utils.normalize_section_units(params['b'], params['h'])
             fc, fy = params['fc'], params['fy']
             offsets = [0] + list(np.cumsum(spans))
             
-            # --- LOOP THROUGH SPANS ---
             for i in range(n_spans):
                 s_len, s_start, s_end = spans[i], offsets[i], offsets[i+1]
                 
-                # Extract Forces for this span
                 mask_u = (x_ult >= s_start - 1e-6) & (x_ult <= s_end + 1e-6)
                 if not mask_u.any(): continue
 
-                # Design Forces (Ultimate)
-                mu_pos = max(0.0, (M_ult[mask_u]/1000.0).max())
-                mu_neg = abs(min(0.0, (M_ult[mask_u]/1000.0).min()))
-                vu_max = abs((V_ult[mask_u] / 1000.0)).max()
+                # Design Forces (ถอด /1000 ออก)
+                mu_pos = max(0.0, M_ult[mask_u].max())
+                mu_neg = abs(min(0.0, M_ult[mask_u].min()))
+                vu_max = abs(V_ult[mask_u]).max()
 
-                # Service Forces
                 mask_s = (x_svc >= s_start - 1e-6) & (x_svc <= s_end + 1e-6)
-                ma_pos_svc = max(0.0, (M_svc[mask_s]/1000.0).max())
+                ma_pos_svc = max(0.0, M_svc[mask_s].max())
                 delta_elastic_mm = abs(D_svc[mask_s]).max() * 1000.0
 
                 with st.expander(f"📍 SPAN {i+1} (L={s_len} m) | Mu+ : {mu_pos:.1f} kNm, Mu- : {mu_neg:.1f} kNm", expanded=True):
@@ -294,7 +271,6 @@ else:
                             with ct2: t_qty = st.number_input(f"L{l_idx+1} No.", 0, 20, 2 if l_idx==0 else 0, key=f"tn_{i}_{l_idx}")
                             top_layers.append({'n': t_qty, 'db': t_db})
                         
-                        # Top Calcs
                         d_t_val, as_prov_t, y_centroid_t = rc_design_engine.get_centroid_and_d(top_layers, h_mm, cover_mm, 9)
                         d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + 9 + 16/2)
                         phi_Mn_t, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(top_layers, d_t, b_mm, h_mm, fc, fy)
@@ -311,7 +287,6 @@ else:
                             with cb2: b_qty = st.number_input(f"L{l_idx+1} No.", 0, 20, 3 if l_idx==0 else 0, key=f"bn_{i}_{l_idx}")
                             bot_layers.append({'n': b_qty, 'db': b_db})
                         
-                        # Bot Calcs
                         d_b, as_prov_b, _ = rc_design_engine.get_centroid_and_d(bot_layers, h_mm, cover_mm, 9)
                         if d_b <= 0: d_b = h_mm - (cover_mm + 9 + 16/2)
                         phi_Mn_b, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(bot_layers, d_b, b_mm, h_mm, fc, fy)
