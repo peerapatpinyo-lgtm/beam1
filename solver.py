@@ -1,43 +1,47 @@
 import numpy as np
 import pandas as pd
 
+# --- ฟังก์ชันตัวช่วยดักจับ Error (กันเว็บพังเวลาเผลอพิมพ์ช่องว่าง) ---
+def safe_float(val, default=0.0):
+    try:
+        if pd.isna(val) or str(val).strip() == '': return default
+        return float(val)
+    except:
+        return default
+
 def solve_beam(spans, sup_df, loads_df, params):
     """
     Solves the continuous beam using Direct Stiffness Method (FEM).
     Theory: Timoshenko Beam (includes Shear Deformation).
     *** Standard Units Used: Force = kN, Length = m ***
     """
-    # --- 0.1 Safety Check for Empty Loads ---
-    if loads_df.empty or 'span_index' not in loads_df.columns:
+    # --- 0.1 Safety Check for DataFrames ---
+    if loads_df is None or loads_df.empty or 'span_index' not in loads_df.columns:
         loads_df = pd.DataFrame(columns=['span_index', 'type', 'mag', 'dist', 'd_start'])
+        
+    if sup_df is None or sup_df.empty:
+        # ถ้าไม่มีจุดรองรับเลย ให้จำลองเป็น Pinned หัว-ท้าย ชั่วคราว กันสมการพัง
+        sup_df = pd.DataFrame([{'id': 0, 'type': 'Pinned'}, {'id': len(spans), 'type': 'Pinned'}])
 
     # --- 0.2 Parameter Calculation & Defaults ---
-    # 1. จัดการหน่วยหน้าตัด (b, h) ให้อยู่ในหน่วย "เมตร (m)" เสมอ
-    b_raw = params.get('b', 300)
-    h_raw = params.get('h', 500)
+    b_raw = safe_float(params.get('b', 300), 300)
+    h_raw = safe_float(params.get('h', 500), 500)
     b = b_raw / 1000.0 if b_raw >= 10 else b_raw
     h = h_raw / 1000.0 if h_raw >= 10 else h_raw
 
-    # 2. คำนวณค่า E (Modulus of Elasticity) ให้อยู่ในหน่วย "kPa (kN/m²)"
     if 'fc' in params:
-        # ใช้สูตร ACI: E = 4700 * sqrt(fc') MPa 
-        # 1 ksc = 0.0980665 MPa
-        fc_mpa = params['fc'] * 0.0980665
-        E = 4700 * np.sqrt(fc_mpa) * 1e3  # คูณ 1e3 แปลง MPa เป็น kPa (kN/m²)
+        fc_mpa = safe_float(params['fc']) * 0.0980665
+        E = 4700 * np.sqrt(fc_mpa) * 1e3 if fc_mpa > 0 else 25e6
     else:
-        E = params.get('E', 25e6) # Default 25e6 kPa (25 GPa)
-        if E > 1e8:  # ถ้าเผลอรับค่ามาเป็น Pa ให้ปรับเป็น kPa
-            E = E / 1000.0 
+        E = safe_float(params.get('E', 25e6), 25e6)
+        if E > 1e8: E = E / 1000.0 
             
-    # 3. จัดการค่า I (Moment of Inertia) ให้อยู่ในหน่วย "m⁴"
     if 'I' in params:
-        I = params['I']
-        if I > 1: # ถ้าเผลอส่ง I มาเป็น mm⁴ ให้แปลงกลับเป็น m⁴
-            I = I / 1e12
+        I = safe_float(params['I'], (b * h**3) / 12.0)
+        if I > 1: I = I / 1e12
     else:
         I = (b * h**3) / 12.0
 
-    # --- Timoshenko Parameters ---
     nu = 0.2  
     G = E / (2.0 * (1.0 + nu)) 
     k_factor = 5.0 / 6.0    
@@ -52,9 +56,9 @@ def solve_beam(spans, sup_df, loads_df, params):
     K_global = np.zeros((n_dof, n_dof))
     F_global = np.zeros(n_dof)
     
-    # 2. Build Stiffness Matrix (K) with Timoshenko Factor (Phi)
+    # 2. Build Stiffness Matrix
     for i in range(n_spans):
-        L = spans[i]
+        L = safe_float(spans[i], 1.0)
         Phi = (12 * E * I) / (G * As * L**2)
         const = (E * I) / ((1 + Phi) * L**3)
         
@@ -75,80 +79,73 @@ def solve_beam(spans, sup_df, loads_df, params):
             for c in range(4):
                 K_global[idx[r], idx[c]] += k_ele[r, c]
 
-    # 3. Process Loads (Fixed End Actions - FEA)
-    fea_local = [] 
-    for _ in range(n_spans):
-        fea_local.append(np.zeros(4)) 
+    # 3. Process Loads
+    fea_local = [np.zeros(4) for _ in range(n_spans)]
 
-    if not loads_df.empty:
-        for _, load in loads_df.iterrows():
-            try:
-                span_idx = int(load['span_index'])
-                if span_idx >= n_spans: continue
+    for _, load in loads_df.iterrows():
+        try:
+            span_idx = int(safe_float(load.get('span_index', -1)))
+            if span_idx < 0 or span_idx >= n_spans: continue
 
-                L = spans[span_idx]
-                mag = load['mag'] # kN or kN/m
-                idx = [2*span_idx, 2*span_idx+1, 2*(span_idx+1), 2*(span_idx+1)+1]
-                fea = np.zeros(4)
+            L = spans[span_idx]
+            mag = safe_float(load.get('mag', 0.0))
+            if mag == 0.0: continue # ถ้าแรงเป็น 0 ไม่ต้องคำนวณ
+
+            idx = [2*span_idx, 2*span_idx+1, 2*(span_idx+1), 2*(span_idx+1)+1]
+            fea = np.zeros(4)
+            l_type = str(load.get('type', 'P')).strip().upper()
+            
+            if l_type in ['P', 'POINT', 'POINT LOAD']:
+                P = mag
+                a = safe_float(load.get('d_start', 0.0))
+                a = max(0.0, min(L, a))
+                b_dist = L - a
+                denom = L**2
                 
-                # --- แก้ไขจุดที่ 1 ---
-                l_type = str(load['type']).strip().upper()
-                if l_type in ['P', 'POINT', 'POINT LOAD']:
-                    P = mag
-                    a = float(load['d_start']) 
-                    a = max(0.0, min(L, a))
-                    b_dist = L - a
-                    denom = L**2
-                    
-                    fea[0] = (P * b_dist**2 * (3*a + b_dist)) / L**3
-                    fea[1] = (P * a * b_dist**2) / denom
-                    fea[2] = (P * a**2 * (a + 3*b_dist)) / L**3
-                    fea[3] = -(P * a**2 * b_dist) / denom
-                    
-                elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
-                    w = mag
-                    a = float(load.get('d_start', 0.0))
-                    dist_len = float(load.get('dist', L))
-                    b_load = a + dist_len
-                    
-                    a = max(0.0, min(L, a))
-                    b_load = max(0.0, min(L, b_load))
-                    
-                    if b_load > a:
-                        def int_M1(x): return (L**2 * x**2 / 2) - (2 * L * x**3 / 3) + (x**4 / 4)
-                        M1 = (w / L**2) * (int_M1(b_load) - int_M1(a))
-                        
-                        def int_M2(x): return (L * x**3 / 3) - (x**4 / 4)
-                        M2 = -(w / L**2) * (int_M2(b_load) - int_M2(a))
-                        
-                        def int_R1(x): return (L**3 * x) - (L * x**3) + (x**4 / 2)
-                        R1 = (w / L**3) * (int_R1(b_load) - int_R1(a))
-                        
-                        c_dist = b_load - a
-                        R2 = (w * c_dist) - R1
-                        
-                        fea[0] = R1
-                        fea[1] = M1
-                        fea[2] = R2
-                        fea[3] = M2
-
-                fea_local[span_idx] += fea
+                fea[0] = (P * b_dist**2 * (3*a + b_dist)) / L**3
+                fea[1] = (P * a * b_dist**2) / denom
+                fea[2] = (P * a**2 * (a + 3*b_dist)) / L**3
+                fea[3] = -(P * a**2 * b_dist) / denom
                 
-                F_global[idx[0]] -= fea[0]
-                F_global[idx[1]] -= fea[1]
-                F_global[idx[2]] -= fea[2]
-                F_global[idx[3]] -= fea[3]
-            except Exception:
-                continue
+            elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
+                w = mag
+                a = safe_float(load.get('d_start', 0.0))
+                dist_len = safe_float(load.get('dist', L))
+                b_load = a + dist_len
+                
+                a = max(0.0, min(L, a))
+                b_load = max(0.0, min(L, b_load))
+                
+                if b_load > a:
+                    def int_M1(x): return (L**2 * x**2 / 2) - (2 * L * x**3 / 3) + (x**4 / 4)
+                    M1 = (w / L**2) * (int_M1(b_load) - int_M1(a))
+                    
+                    def int_M2(x): return (L * x**3 / 3) - (x**4 / 4)
+                    M2 = -(w / L**2) * (int_M2(b_load) - int_M2(a))
+                    
+                    def int_R1(x): return (L**3 * x) - (L * x**3) + (x**4 / 2)
+                    R1 = (w / L**3) * (int_R1(b_load) - int_R1(a))
+                    
+                    c_dist = b_load - a
+                    R2 = (w * c_dist) - R1
+                    
+                    fea[0] = R1; fea[1] = M1; fea[2] = R2; fea[3] = M2
+
+            fea_local[span_idx] += fea
+            F_global[idx[0]] -= fea[0]; F_global[idx[1]] -= fea[1]
+            F_global[idx[2]] -= fea[2]; F_global[idx[3]] -= fea[3]
+        except Exception as e:
+            print(f"🚨 ข้าม Load แถวนี้ไปเพราะ Error: {e}")
+            continue
 
     # 4. Apply Boundary Conditions
     fixed_dofs = []
     for i, row in sup_df.iterrows():
-        node_idx = int(row['id']) if 'id' in row else i
+        node_idx = int(safe_float(row.get('id', i)))
         if node_idx >= n_nodes: continue
 
         fixed_dofs.append(2*node_idx) 
-        if row.get('type') == 'Fixed':
+        if str(row.get('type', '')).strip().title() == 'Fixed':
             fixed_dofs.append(2*node_idx + 1)
             
     free_dofs = [i for i in range(n_dof) if i not in fixed_dofs]
@@ -157,9 +154,13 @@ def solve_beam(spans, sup_df, loads_df, params):
     F_ff = F_global[free_dofs]
     
     try:
+        # ถ้าคำนวณไม่ผ่านตรงนี้ แสดงว่าจุดรองรับมีปัญหา
         d_free = np.linalg.solve(K_ff, F_ff)
-    except np.linalg.LinAlgError:
-        return np.zeros(10), np.zeros(10), np.zeros(10), np.zeros(10), {}
+    except np.linalg.LinAlgError as e:
+        print(f"💥 เมทริกซ์คำนวณไม่ได้ (โครงสร้างไม่เสถียร): {e}")
+        # ป้องกันหน้าเว็บโชว์ 0.00 แบบเงียบๆ
+        dummy_x = np.linspace(0, sum(spans), 10)
+        return dummy_x, np.zeros(10), np.zeros(10), np.zeros(10), {"Error": "Support ไม่สมบูรณ์"}
     
     d_all = np.zeros(n_dof)
     d_all[free_dofs] = d_free
@@ -175,21 +176,19 @@ def solve_beam(spans, sup_df, loads_df, params):
         points = [0.0, L]
         span_loads = loads_df[loads_df['span_index'] == i]
         
-        # --- แก้ไขจุดที่ 2 ---
         for _, load in span_loads.iterrows():
-            l_type = str(load['type']).strip().upper()
+            l_type = str(load.get('type', 'P')).strip().upper()
             if l_type in ['P', 'POINT', 'POINT LOAD']:
-                p_loc = float(load['d_start'])
+                p_loc = safe_float(load.get('d_start', 0.0))
                 points.extend([max(0, p_loc - 1e-5), p_loc, min(L, p_loc + 1e-5)])
             elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
-                s = float(load['d_start'])
-                e = s + float(load['dist'])
+                s = safe_float(load.get('d_start', 0.0))
+                e = s + safe_float(load.get('dist', L))
                 points.extend([max(0, s), min(L, e)])
         
         x_dense = np.linspace(0, L, 101)
         x_local = np.sort(np.unique(np.concatenate([x_dense, points])))
         
-        # 5.1 Internal Forces
         Phi = (12 * E * I) / (G * As * L**2)
         const = (E * I) / ((1 + Phi) * L**3)
         k_ele_local = const * np.array([
@@ -200,48 +199,40 @@ def solve_beam(spans, sup_df, loads_df, params):
         ])
         
         f_int = np.dot(k_ele_local, u_ele) + fea_local[i]
-        
-        V_start = f_int[0]
-        M_start_matrix = f_int[1] 
+        V_start, M_start_matrix = f_int[0], f_int[1] 
         M_beam_start = -M_start_matrix
-
         m_x_list, v_x_list = [], []
         
         for x in x_local:
             V_curr = V_start
             M_curr = M_beam_start + V_start * x
             
-            # --- แก้ไขจุดที่ 3 ---
             for _, load in span_loads.iterrows():
-                mag = load['mag']
-                l_type = str(load['type']).strip().upper()
+                mag = safe_float(load.get('mag', 0.0))
+                if mag == 0.0: continue
+                l_type = str(load.get('type', 'P')).strip().upper()
+                
                 if l_type in ['P', 'POINT', 'POINT LOAD']:
-                    p_loc = float(load['d_start'])
+                    p_loc = safe_float(load.get('d_start', 0.0))
                     if x > p_loc:
                         V_curr -= mag
                         M_curr -= mag * (x - p_loc)
                 elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
-                    u_start = float(load['d_start'])
-                    u_len = float(load['dist'])
+                    u_start = safe_float(load.get('d_start', 0.0))
+                    u_len = safe_float(load.get('dist', L))
                     u_end = u_start + u_len
                     if x > u_start:
                         eff_end = min(x, u_end)
                         eff_len = eff_end - u_start
                         load_force = mag * eff_len
-                        centroid_dist = x - (u_start + eff_len/2)
                         V_curr -= load_force
-                        M_curr -= load_force * centroid_dist
+                        M_curr -= load_force * (x - (u_start + eff_len/2))
 
             m_x_list.append(M_curr)
             v_x_list.append(V_curr)
 
-        # 5.2 Deflection (Double Integration)
-        M_arr = np.array(m_x_list)
-        V_arr = np.array(v_x_list)
-        
-        theta_b = np.zeros_like(x_local)
-        v_b = np.zeros_like(x_local)
-        v_s = np.zeros_like(x_local)
+        M_arr, V_arr = np.array(m_x_list), np.array(v_x_list)
+        theta_b, v_b, v_s = np.zeros_like(x_local), np.zeros_like(x_local), np.zeros_like(x_local)
         
         for j in range(1, len(x_local)):
             dx = x_local[j] - x_local[j-1]
@@ -250,11 +241,9 @@ def solve_beam(spans, sup_df, loads_df, params):
             v_s[j] = v_s[j-1] + 0.5 * (V_arr[j-1] + V_arr[j]) / (G * As) * dx
             
         v_total_int = v_b + v_s
-        
         C2 = u_ele[0]
         C1 = (u_ele[2] - v_total_int[-1] - C2) / L if L > 0 else 0
-            
-        v_def_m = v_total_int + C1 * x_local + C2 # คายค่าเป็นเมตร (m) ไม่ต้องคูณ 1000 แล้ว
+        v_def_m = v_total_int + C1 * x_local + C2 
         
         x_total.extend(x0 + x_local)
         moment_total.extend(m_x_list)
@@ -266,16 +255,14 @@ def solve_beam(spans, sup_df, loads_df, params):
     for i in range(n_spans):
         f = fea_local[i]
         idx = [2*i, 2*i+1, 2*(i+1), 2*(i+1)+1]
-        FEA_R[idx[0]] += f[0]
-        FEA_R[idx[1]] += f[1]
-        FEA_R[idx[2]] += f[2]
-        FEA_R[idx[3]] += f[3]
+        FEA_R[idx[0]] += f[0]; FEA_R[idx[1]] += f[1]
+        FEA_R[idx[2]] += f[2]; FEA_R[idx[3]] += f[3]
         
     R_final = np.dot(K_global, d_all) + FEA_R
     
     reactions = {}
     for i, row in sup_df.iterrows():
-        n_idx = int(row['id']) if 'id' in row else i
+        n_idx = int(safe_float(row.get('id', i)))
         if n_idx < n_nodes:
             reactions[f"R{n_idx}"] = R_final[2*n_idx]
 
