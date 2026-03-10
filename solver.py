@@ -12,12 +12,30 @@ def solve_beam(spans, sup_df, loads_df, params):
         loads_df = pd.DataFrame(columns=['span_index', 'type', 'mag', 'dist', 'd_start'])
 
     # --- 0.2 Parameter Calculation & Defaults ---
-    b = params.get('b', 0.3)
-    h = params.get('h', 0.5)
-    E = params.get('E', 25e9) 
-    
+    # --- 0.2 Parameter Calculation & Defaults ---
+    # 1. จัดการหน่วยหน้าตัด (b, h) ให้อยู่ในหน่วย "เมตร (m)" เสมอ
+    b_raw = params.get('b', 300)
+    h_raw = params.get('h', 500)
+    b = b_raw / 1000.0 if b_raw >= 10 else b_raw
+    h = h_raw / 1000.0 if h_raw >= 10 else h_raw
+
+    # 2. คำนวณค่า E (Modulus of Elasticity) ให้อยู่ในหน่วย "Pa (N/m²)"
+    if 'fc' in params:
+        # ใช้สูตร ACI: E = 4700 * sqrt(fc') MPa 
+        # (สมมติว่า fc' ที่รับมาเป็น ksc ต้องแปลงเป็น MPa ก่อน: 1 ksc = 0.0980665 MPa)
+        fc_mpa = params['fc'] * 0.0980665
+        E = 4700 * np.sqrt(fc_mpa) * 1e6  # คูณ 1e6 แปลง MPa เป็น Pa
+    else:
+        E = params.get('E', 25e9)
+        if E < 1e8:  # ถ้าเผลอรับค่ามาเป็น MPa ให้ปรับเป็น Pa
+            E = E * 1e6 
+            
+    # 3. จัดการค่า I (Moment of Inertia) ให้อยู่ในหน่วย "m⁴"
     if 'I' in params:
         I = params['I']
+        # ถ้าโปรแกรมส่วนอื่นเผลอส่ง I มาเป็น mm⁴ (ค่าจะมหาศาล) ให้แปลงกลับเป็น m⁴
+        if I > 1: 
+            I = I / 1e12
     else:
         I = (b * h**3) / 12
 
