@@ -91,7 +91,9 @@ def solve_beam(spans, sup_df, loads_df, params):
                 idx = [2*span_idx, 2*span_idx+1, 2*(span_idx+1), 2*(span_idx+1)+1]
                 fea = np.zeros(4)
                 
-                if load['type'] == 'P':
+                # --- แก้ไขจุดที่ 1 ---
+                l_type = str(load['type']).strip().upper()
+                if l_type in ['P', 'POINT', 'POINT LOAD']:
                     P = mag
                     a = float(load['d_start']) 
                     a = max(0.0, min(L, a))
@@ -103,7 +105,7 @@ def solve_beam(spans, sup_df, loads_df, params):
                     fea[2] = (P * a**2 * (a + 3*b_dist)) / L**3
                     fea[3] = -(P * a**2 * b_dist) / denom
                     
-                elif load['type'] == 'U':
+                elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
                     w = mag
                     a = float(load.get('d_start', 0.0))
                     dist_len = float(load.get('dist', L))
@@ -173,11 +175,13 @@ def solve_beam(spans, sup_df, loads_df, params):
         points = [0.0, L]
         span_loads = loads_df[loads_df['span_index'] == i]
         
+        # --- แก้ไขจุดที่ 2 ---
         for _, load in span_loads.iterrows():
-            if load['type'] == 'P':
+            l_type = str(load['type']).strip().upper()
+            if l_type in ['P', 'POINT', 'POINT LOAD']:
                 p_loc = float(load['d_start'])
                 points.extend([max(0, p_loc - 1e-5), p_loc, min(L, p_loc + 1e-5)])
-            elif load['type'] == 'U':
+            elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
                 s = float(load['d_start'])
                 e = s + float(load['dist'])
                 points.extend([max(0, s), min(L, e)])
@@ -207,14 +211,16 @@ def solve_beam(spans, sup_df, loads_df, params):
             V_curr = V_start
             M_curr = M_beam_start + V_start * x
             
+            # --- แก้ไขจุดที่ 3 ---
             for _, load in span_loads.iterrows():
                 mag = load['mag']
-                if load['type'] == 'P':
+                l_type = str(load['type']).strip().upper()
+                if l_type in ['P', 'POINT', 'POINT LOAD']:
                     p_loc = float(load['d_start'])
                     if x > p_loc:
                         V_curr -= mag
                         M_curr -= mag * (x - p_loc)
-                elif load['type'] == 'U':
+                elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
                     u_start = float(load['d_start'])
                     u_len = float(load['dist'])
                     u_end = u_start + u_len
