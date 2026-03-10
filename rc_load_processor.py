@@ -34,28 +34,25 @@ def prepare_load_dataframe(user_loads_df, n_spans, spans, params, f_dl=1.4, f_ll
         # 2. จัดการเรื่องหน่วย (Unit Conversion)
         raw_mag = float(load['mag'])
         
-        # [Smart Check]
-        # Self-weight จาก app.py มักมาเป็นหน่วย N/m (ค่าหลักพัน เช่น 3600)
-        # User Input มักกรอกเป็น kN/m (ค่าหลักสิบ เช่น 10, 25)
-        # เราใช้เงื่อนไขนี้แยกแยะเพื่อแปลงให้เป็น N ทั้งหมด
+        # [New Smart Check]: ปรับให้ทุกอย่างกลายเป็น kN
         if raw_mag > 500.0:
-            # ค่าเยอะ -> สันนิษฐานว่าเป็น N แล้ว (เช่น SW)
-            mag_N = raw_mag
+            # ถ้าค่ามาเป็นหลักพัน (เช่น Self-weight 3600 N/m) ให้หาร 1000 เพื่อเป็น kN/m
+            mag_kN = raw_mag / 1000.0
         else:
-            # ค่าน้อย -> สันนิษฐานว่าเป็น kN -> คูณ 1000 เป็น N
-            mag_N = raw_mag * 1000.0
+            # ถ้าค่าน้อยๆ (เช่น User กรอก 10, 25) แสดงว่าเป็น kN/m อยู่แล้ว ไม่ต้องทำอะไร
+            mag_kN = raw_mag
 
-        # 3. คูณ Factor (Ultimate Load)
-        factored_mag_N = mag_N * factor
+        # 3. คูณ Factor (Ultimate Load) ในหน่วย kN
+        factored_mag_kN = mag_kN * factor
 
         # 4. เตรียมข้อมูลลง List
         processed_loads.append({
             'span_index': int(load['span_index']),
-            'type': load['type'],                       # 'P' หรือ 'U'
-            'mag': factored_mag_N,                      # ค่า Load (N) ที่คูณ Factor แล้ว
-            'dist': float(load.get('dist', 0)),         # ความยาว Load (ถ้ามี)
-            'd_start': float(load.get('d_start', 0)),   # จุดเริ่ม Load
-            'case_origin': case_type                    # เก็บไว้ตรวจสอบ
+            'type': load['type'],                       
+            'mag': factored_mag_kN,  # <--- แก้เป็น mag_kN (ส่งเป็น kN เข้า Solver)
+            'dist': float(load.get('dist', 0)),         
+            'd_start': float(load.get('d_start', 0)),   
+            'case_origin': case_type                    
         })
 
     # ส่งค่ากลับเป็น DataFrame ใหม่สำหรับเข้า Solver
