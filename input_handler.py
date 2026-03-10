@@ -5,7 +5,7 @@ import numpy as np
 def render_all_sidebar_inputs():
     """
     Renders sidebar inputs for RC Beam Analysis.
-    Features: DL/LL Case, Partial UDL (Start/End), and Error Handling for Session State.
+    Features: Standardized units (m, mm, kN), DL/LL Case, Partial UDL, and Error Handling.
     """
     st.sidebar.markdown("### 1. Material & Section")
     
@@ -13,14 +13,24 @@ def render_all_sidebar_inputs():
     col1, col2 = st.sidebar.columns(2)
     with col1:
         fc = st.number_input("f'c (MPa)", 15.0, 50.0, 24.0, step=1.0)
-        b = st.number_input("Width b (m)", 0.1, 1.0, 0.20, step=0.05)
+        # 🛠️ FIX 1: เปลี่ยนให้กรอก b เป็น มิลลิเมตร (mm)
+        b = st.number_input("Width b (mm)", 100.0, 1000.0, 200.0, step=50.0)
     with col2:
         fy = st.number_input("fy (MPa)", 240, 500, 400, step=10)
-        h = st.number_input("Depth h (m)", 0.2, 2.0, 0.40, step=0.05)
+        # 🛠️ FIX 1: เปลี่ยนให้กรอก h เป็น มิลลิเมตร (mm)
+        h = st.number_input("Depth h (mm)", 200.0, 2000.0, 400.0, step=50.0)
         
-    # E_c calculation in Pa (N/m^2)
+    # 🛠️ FIX 2: ปรับหน่วย E และ I ให้เป็นมาตรฐานสำหรับ Solver (kN และ m)
+    # E_c = 4700 * sqrt(fc) จะได้หน่วย MPa (N/mm^2) 
+    # คูณ 1000 เพื่อแปลงเป็น kN/m^2 (kPa)
     E_c = 4700 * np.sqrt(fc) * 1000  
-    I_g = (b * h**3) / 12
+    
+    # คำนวณ I_g โดยแปลง b, h เป็นเมตรก่อน เพื่อให้ได้หน่วย m^4
+    b_m = b / 1000.0
+    h_m = h / 1000.0
+    I_g = (b_m * h_m**3) / 12.0
+    
+    # ส่งค่า b, h เป็น mm ออกไป (เพื่อใช้วาดรูป) และส่ง E, I เป็นหน่วยมาตรฐาน (สำหรับคำนวณ)
     params = {'fc': fc, 'fy': fy, 'b': b, 'h': h, 'E': E_c, 'I': I_g}
 
     # --- 2. Geometry (Spans) ---
@@ -95,11 +105,10 @@ def render_all_sidebar_inputs():
     # --- 5. Data Visualization & Cleanup ---
     loads_df = pd.DataFrame(st.session_state.load_list)
     
-    # Defensive check for DataFrame columns (Fixes KeyError)
+    # Defensive check for DataFrame columns
     required_cols = ['case', 'type', 'span_index', 'mag', 'd_start', 'd_end']
     
     if not loads_df.empty:
-        # Check if all required columns exist (for backward compatibility)
         if all(col in loads_df.columns for col in required_cols):
             st.sidebar.markdown("#### Active Load List")
             st.sidebar.dataframe(loads_df[required_cols], hide_index=True)
