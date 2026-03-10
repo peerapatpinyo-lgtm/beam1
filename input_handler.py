@@ -19,7 +19,7 @@ def render_all_sidebar_inputs():
         h = st.number_input("Depth h (m)", 0.2, 2.0, 0.40, step=0.05)
         
     # E_c calculation in Pa (N/m^2)
-    E_c = 4700 * np.sqrt(fc) * 1e6  
+    E_c = 4700 * np.sqrt(fc) * 1000  
     I_g = (b * h**3) / 12
     params = {'fc': fc, 'fy': fy, 'b': b, 'h': h, 'E': E_c, 'I': I_g}
 
