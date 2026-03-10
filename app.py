@@ -165,7 +165,21 @@ else:
         # ==========================================
         # ⚡ LOAD PREPARATION
         # ==========================================
+
         clean_user_loads = raw_user_loads_df.copy(deep=True)
+        
+        # 🛠️ FIX 1: จัดระเบียบ Type และ Case ของ User Load ป้องกันปัญหา String ไม่ตรงกับที่ Solver ต้องการ
+        if not clean_user_loads.empty:
+            if 'type' in clean_user_loads.columns:
+                # ถ้าขึ้นต้นด้วย P ให้เป็น 'P' (Point), นอกนั้นให้เป็น 'U' (Uniform)
+                clean_user_loads['type'] = clean_user_loads['type'].apply(
+                    lambda x: 'P' if str(x).upper().startswith('P') else 'U'
+                )
+            if 'case' in clean_user_loads.columns:
+                # ถ้ามีตัว L ให้ถือเป็น 'LL' (Live Load), นอกนั้นให้เป็น 'DL' (Dead Load)
+                clean_user_loads['case'] = clean_user_loads['case'].apply(
+                    lambda x: 'LL' if 'L' in str(x).upper() and 'D' not in str(x).upper() else 'DL'
+                )
         
         if include_sw:
             sw_rows = []
@@ -176,14 +190,14 @@ else:
                     'mag': sw_val,  # หน่วย kN/m
                     'dist': spans[i], 
                     'd_start': 0, 
-                    'case': 'SW'
+                    'case': 'DL'    # 🛠️ FIX 2: เปลี่ยนจาก 'SW' เป็น 'DL' เพื่อให้ Load Processor นำไปคูณกับ Dead Load Factor ได้ถูกต้อง
                 })
             df_sw_only = pd.DataFrame(sw_rows)
             final_calc_loads = pd.concat([clean_user_loads, df_sw_only], ignore_index=True)
             status_msg = "✅ **Self-Weight Included**"
         else:
             final_calc_loads = clean_user_loads
-            status_msg = "❌ **Self-Weight Excluded (Pure User Loads)**"
+            status_msg = "❌ **Self-Weight Excluded (Pure User Loads)**" 
 
         # --- RUN SOLVER ---
         calc_loads_ult = rc_load_processor.prepare_load_dataframe(final_calc_loads, n_spans, spans, params, f_dl, f_ll)
