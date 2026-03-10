@@ -11,25 +11,20 @@ def solve_beam(spans, sup_df, loads_df, params):
         loads_df = pd.DataFrame(columns=['span_index', 'type', 'mag', 'dist', 'd_start'])
 
     # --- 0.2 Parameter Calculation & Defaults ---
-    # Default to Concrete properties if E/I not provided
     b = params.get('b', 0.3)
     h = params.get('h', 0.5)
-    
-    # E_concrete approx 25 GPa if not specified (or 4700sqrt(fc))
-    # Here using a standard value or what's passed
     E = params.get('E', 25e9) 
     
-    # Calculate I if not provided
     if 'I' in params:
         I = params['I']
     else:
         I = (b * h**3) / 12
 
     # --- Timoshenko Parameters ---
-    nu = 0.2  # Poisson's ratio for concrete
-    G = E / (2 * (1 + nu))  # Shear Modulus
-    k_factor = 5.0 / 6.0    # Shear Correction Factor for Rectangle
-    As = k_factor * b * h   # Shear Area
+    nu = 0.2  
+    G = E / (2 * (1 + nu)) 
+    k_factor = 5.0 / 6.0    
+    As = k_factor * b * h   
     
     # 1. Setup Nodes & Elements
     n_spans = len(spans)
@@ -43,9 +38,6 @@ def solve_beam(spans, sup_df, loads_df, params):
     # 2. Build Stiffness Matrix (K) with Timoshenko Factor (Phi)
     for i in range(n_spans):
         L = spans[i]
-        
-        # Phi represents the ratio of bending stiffness to shear stiffness
-        # If Phi = 0, it reduces to Euler-Bernoulli beam
         Phi = (12 * E * I) / (G * As * L**2)
         const = (E * I) / ((1 + Phi) * L**3)
         
@@ -83,15 +75,10 @@ def solve_beam(spans, sup_df, loads_df, params):
                 fea = np.zeros(4)
                 
                 if load['type'] == 'P':
-                    # [FIXED] Use 'd_start' for Point Load position
                     P = mag
                     a = float(load['d_start']) 
-                    
-                    # Clamp 'a' to be within span
                     a = max(0.0, min(L, a))
                     b_dist = L - a
-                    
-                    # FEA Formulas for Point Load
                     denom = L**2
                     
                     fea[0] = (P * b_dist**2 * (3*a + b_dist)) / L**3
@@ -101,23 +88,40 @@ def solve_beam(spans, sup_df, loads_df, params):
                     
                 elif load['type'] == 'U':
                     w = mag
-                    # Determine if Full or Partial UDL
-                    d_start = float(load.get('d_start', 0.0))
+                    a = float(load.get('d_start', 0.0))
                     dist_len = float(load.get('dist', L))
+                    b = a + dist_len
                     
-                    # For simplicity in this version, we approximate Partial UDL 
-                    # by checking if it covers significant length. 
-                    # Ideally, full integration is needed for partial UDL FEA.
-                    # Assuming standard Full UDL for now as per previous app logic compatibility:
+                    # Clamp values to strictly remain within the current span
+                    a = max(0.0, min(L, a))
+                    b = max(0.0, min(L, b))
                     
-                    fea[0] = w * L / 2
-                    fea[1] = w * L**2 / 12
-                    fea[2] = w * L / 2
-                    fea[3] = -w * L**2 / 12
+                    if b > a:
+                        # ใช้วิธีอินทิเกรตสมการ Exact Analytical แบบแม่นยำสำหรับ Partial UDL
+                        # M1 (Left Fixed End Moment)
+                        def int_M1(x): return (L**2 * x**2 / 2) - (2 * L * x**3 / 3) + (x**4 / 4)
+                        M1 = (w / L**2) * (int_M1(b) - int_M1(a))
+                        
+                        # M2 (Right Fixed End Moment)
+                        def int_M2(x): return (L * x**3 / 3) - (x**4 / 4)
+                        M2 = -(w / L**2) * (int_M2(b) - int_M2(a))
+                        
+                        # R1 (Left Vertical Reaction)
+                        def int_R1(x): return (L**3 * x) - (L * x**3) + (x**4 / 2)
+                        R1 = (w / L**3) * (int_R1(b) - int_R1(a))
+                        
+                        # R2 (Right Vertical Reaction)
+                        c = b - a
+                        R2 = (w * c) - R1
+                        
+                        fea[0] = R1
+                        fea[1] = M1
+                        fea[2] = R2
+                        fea[3] = M2
 
                 fea_local[span_idx] += fea
                 
-                # Subtract FEA from Global Force Vector (F = K*d + FEA => K*d = F_ext - FEA)
+                # Subtract FEA from Global Force Vector
                 F_global[idx[0]] -= fea[0]
                 F_global[idx[1]] -= fea[1]
                 F_global[idx[2]] -= fea[2]
@@ -127,16 +131,14 @@ def solve_beam(spans, sup_df, loads_df, params):
 
     # 4. Apply Boundary Conditions
     fixed_dofs = []
-    # Map support IDs to node indices
     for i, row in sup_df.iterrows():
-        # Identify Node Index. If 'id' exists use it, else use DataFrame index i
         node_idx = int(row['id']) if 'id' in row else i
         if node_idx >= n_nodes: continue
 
-        # Fix Vertical Displacement (Dy) for all supports
+        # Fix Vertical Displacement (Dy)
         fixed_dofs.append(2*node_idx) 
         
-        # Fix Rotation (Mz) only for Fixed supports
+        # Fix Rotation (Mz) for Fixed supports
         if row.get('type') == 'Fixed':
             fixed_dofs.append(2*node_idx + 1)
             
@@ -149,7 +151,6 @@ def solve_beam(spans, sup_df, loads_df, params):
     try:
         d_free = np.linalg.solve(K_ff, F_ff)
     except np.linalg.LinAlgError:
-        # Unstable / Singular Matrix
         return np.zeros(10), np.zeros(10), np.zeros(10), np.zeros(10), {}
     
     d_all = np.zeros(n_dof)
