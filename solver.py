@@ -1,4 +1,3 @@
-# solver.py
 import numpy as np
 import pandas as pd
 
@@ -6,12 +5,12 @@ def solve_beam(spans, sup_df, loads_df, params):
     """
     Solves the continuous beam using Direct Stiffness Method (FEM).
     Theory: Timoshenko Beam (includes Shear Deformation).
+    *** Standard Units Used: Force = kN, Length = m ***
     """
     # --- 0.1 Safety Check for Empty Loads ---
     if loads_df.empty or 'span_index' not in loads_df.columns:
         loads_df = pd.DataFrame(columns=['span_index', 'type', 'mag', 'dist', 'd_start'])
 
-    # --- 0.2 Parameter Calculation & Defaults ---
     # --- 0.2 Parameter Calculation & Defaults ---
     # 1. จัดการหน่วยหน้าตัด (b, h) ให้อยู่ในหน่วย "เมตร (m)" เสมอ
     b_raw = params.get('b', 300)
@@ -19,29 +18,28 @@ def solve_beam(spans, sup_df, loads_df, params):
     b = b_raw / 1000.0 if b_raw >= 10 else b_raw
     h = h_raw / 1000.0 if h_raw >= 10 else h_raw
 
-    # 2. คำนวณค่า E (Modulus of Elasticity) ให้อยู่ในหน่วย "Pa (N/m²)"
+    # 2. คำนวณค่า E (Modulus of Elasticity) ให้อยู่ในหน่วย "kPa (kN/m²)"
     if 'fc' in params:
         # ใช้สูตร ACI: E = 4700 * sqrt(fc') MPa 
-        # (สมมติว่า fc' ที่รับมาเป็น ksc ต้องแปลงเป็น MPa ก่อน: 1 ksc = 0.0980665 MPa)
+        # 1 ksc = 0.0980665 MPa
         fc_mpa = params['fc'] * 0.0980665
-        E = 4700 * np.sqrt(fc_mpa) * 1e6  # คูณ 1e6 แปลง MPa เป็น Pa
+        E = 4700 * np.sqrt(fc_mpa) * 1e3  # คูณ 1e3 แปลง MPa เป็น kPa (kN/m²)
     else:
-        E = params.get('E', 25e9)
-        if E < 1e8:  # ถ้าเผลอรับค่ามาเป็น MPa ให้ปรับเป็น Pa
-            E = E * 1e6 
+        E = params.get('E', 25e6) # Default 25e6 kPa (25 GPa)
+        if E > 1e8:  # ถ้าเผลอรับค่ามาเป็น Pa ให้ปรับเป็น kPa
+            E = E / 1000.0 
             
     # 3. จัดการค่า I (Moment of Inertia) ให้อยู่ในหน่วย "m⁴"
     if 'I' in params:
         I = params['I']
-        # ถ้าโปรแกรมส่วนอื่นเผลอส่ง I มาเป็น mm⁴ (ค่าจะมหาศาล) ให้แปลงกลับเป็น m⁴
-        if I > 1: 
+        if I > 1: # ถ้าเผลอส่ง I มาเป็น mm⁴ ให้แปลงกลับเป็น m⁴
             I = I / 1e12
     else:
-        I = (b * h**3) / 12
+        I = (b * h**3) / 12.0
 
     # --- Timoshenko Parameters ---
     nu = 0.2  
-    G = E / (2 * (1 + nu)) 
+    G = E / (2.0 * (1.0 + nu)) 
     k_factor = 5.0 / 6.0    
     As = k_factor * b * h   
     
@@ -89,7 +87,7 @@ def solve_beam(spans, sup_df, loads_df, params):
                 if span_idx >= n_spans: continue
 
                 L = spans[span_idx]
-                mag = load['mag'] 
+                mag = load['mag'] # kN or kN/m
                 idx = [2*span_idx, 2*span_idx+1, 2*(span_idx+1), 2*(span_idx+1)+1]
                 fea = np.zeros(4)
                 
@@ -187,7 +185,7 @@ def solve_beam(spans, sup_df, loads_df, params):
         x_dense = np.linspace(0, L, 101)
         x_local = np.sort(np.unique(np.concatenate([x_dense, points])))
         
-        # 5.1 Internal Forces (คำนวณ M และ V ก่อน)
+        # 5.1 Internal Forces
         Phi = (12 * E * I) / (G * As * L**2)
         const = (E * I) / ((1 + Phi) * L**3)
         k_ele_local = const * np.array([
@@ -231,7 +229,7 @@ def solve_beam(spans, sup_df, loads_df, params):
             m_x_list.append(M_curr)
             v_x_list.append(V_curr)
 
-        # 5.2 Deflection (แก้ไขใหม่: ใช้วิธี Double Integration จากกราฟโมเมนต์)
+        # 5.2 Deflection (Double Integration)
         M_arr = np.array(m_x_list)
         V_arr = np.array(v_x_list)
         
@@ -239,7 +237,6 @@ def solve_beam(spans, sup_df, loads_df, params):
         v_b = np.zeros_like(x_local)
         v_s = np.zeros_like(x_local)
         
-        # อินทิเกรตด้วยวิธี Trapezoidal Rule
         for j in range(1, len(x_local)):
             dx = x_local[j] - x_local[j-1]
             theta_b[j] = theta_b[j-1] + 0.5 * (M_arr[j-1] + M_arr[j]) / (E * I) * dx
@@ -248,17 +245,15 @@ def solve_beam(spans, sup_df, loads_df, params):
             
         v_total_int = v_b + v_s
         
-        # บังคับจุดปลายให้ตรงกับค่า Nodal Deflection จาก FEM 
         C2 = u_ele[0]
         C1 = (u_ele[2] - v_total_int[-1] - C2) / L if L > 0 else 0
             
-        v_def = v_total_int + C1 * x_local + C2
-        v_def_mm = v_def * 1000  # แปลงผลลัพธ์สุดท้ายเป็นหน่วย มิลลิเมตร (mm)
+        v_def_m = v_total_int + C1 * x_local + C2 # คายค่าเป็นเมตร (m) ไม่ต้องคูณ 1000 แล้ว
         
         x_total.extend(x0 + x_local)
         moment_total.extend(m_x_list)
         shear_total.extend(v_x_list)
-        def_total.extend(v_def_mm) 
+        def_total.extend(v_def_m) 
 
     # 6. Reactions Calculation
     FEA_R = np.zeros(n_dof)
