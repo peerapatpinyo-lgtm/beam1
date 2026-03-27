@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import streamlit as st # เพิ่ม import นี้เพื่อโชว์ค่าบนเว็บโดยตรง
+import streamlit as st 
 
 def safe_float(val, default=0.0):
     try:
@@ -156,6 +156,9 @@ def solve_beam(spans, sup_df, loads_df, params):
     # 5. Post-Processing
     x_total, moment_total, shear_total, def_total = [], [], [], []
     
+    # 🛠️ FIX: เช็คก่อนเลยว่ามีโหลดจริงมั้ย ถ้าไม่มีก็ไม่ต้องเข้าลูปคำนวณให้เปลืองแรง
+    has_any_load = not loads_df.empty and (loads_df.get('mag', 0) != 0).any()
+
     for i in range(n_spans):
         L = spans[i]
         x0 = node_coords[i]
@@ -165,6 +168,9 @@ def solve_beam(spans, sup_df, loads_df, params):
         span_loads = loads_df[loads_df['span_index'] == i]
         
         for _, load in span_loads.iterrows():
+            mag = safe_float(load.get('mag', 0.0))
+            if mag == 0: continue # ข้ามโหลดปลอมๆ
+            
             l_type = str(load.get('type', 'P')).strip().upper()
             if l_type in ['P', 'POINT', 'POINT LOAD']:
                 p_loc = safe_float(load.get('d_start', 0.0))
@@ -192,29 +198,34 @@ def solve_beam(spans, sup_df, loads_df, params):
         m_x_list, v_x_list = [], []
         
         for x in x_local:
-            V_curr = V_start
-            M_curr = M_beam_start + V_start * x
-            
-            for _, load in span_loads.iterrows():
-                mag = safe_float(load.get('mag', 0.0))
-                if mag == 0.0: continue
-                l_type = str(load.get('type', 'P')).strip().upper()
+            # 🛠️ FIX: ถ้าไม่มีโหลดกระทำเลยทั้งระบบ บังคับให้เป็น 0 ไปเลย กันการคำนวณคลาดเคลื่อนสะสม
+            if not has_any_load:
+                V_curr = 0.0
+                M_curr = 0.0
+            else:
+                V_curr = V_start
+                M_curr = M_beam_start + V_start * x
                 
-                if l_type in ['P', 'POINT', 'POINT LOAD']:
-                    p_loc = safe_float(load.get('d_start', 0.0))
-                    if x > p_loc:
-                        V_curr -= mag
-                        M_curr -= mag * (x - p_loc)
-                elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
-                    u_start = safe_float(load.get('d_start', 0.0))
-                    u_len = safe_float(load.get('dist', L))
-                    u_end = u_start + u_len
-                    if x > u_start:
-                        eff_end = min(x, u_end)
-                        eff_len = eff_end - u_start
-                        load_force = mag * eff_len
-                        V_curr -= load_force
-                        M_curr -= load_force * (x - (u_start + eff_len/2))
+                for _, load in span_loads.iterrows():
+                    mag = safe_float(load.get('mag', 0.0))
+                    if mag == 0.0: continue
+                    l_type = str(load.get('type', 'P')).strip().upper()
+                    
+                    if l_type in ['P', 'POINT', 'POINT LOAD']:
+                        p_loc = safe_float(load.get('d_start', 0.0))
+                        if x > p_loc:
+                            V_curr -= mag
+                            M_curr -= mag * (x - p_loc)
+                    elif l_type in ['U', 'UNIFORM', 'DISTRIBUTED', 'LINE']:
+                        u_start = safe_float(load.get('d_start', 0.0))
+                        u_len = safe_float(load.get('dist', L))
+                        u_end = u_start + u_len
+                        if x > u_start:
+                            eff_end = min(x, u_end)
+                            eff_len = eff_end - u_start
+                            load_force = mag * eff_len
+                            V_curr -= load_force
+                            M_curr -= load_force * (x - (u_start + eff_len/2))
 
             m_x_list.append(M_curr)
             v_x_list.append(V_curr)
@@ -233,6 +244,10 @@ def solve_beam(spans, sup_df, loads_df, params):
         C1 = (u_ele[2] - v_total_int[-1] - C2) / L if L > 0 else 0
         v_def_m = v_total_int + C1 * x_local + C2 
         
+        # 🛠️ FIX: เคลียร์ Deflection เป็น 0 ถ้าระบบไม่มีโหลดเลย
+        if not has_any_load:
+            v_def_m = np.zeros_like(x_local)
+
         x_total.extend(x0 + x_local)
         moment_total.extend(m_x_list)
         shear_total.extend(v_x_list)
@@ -252,6 +267,7 @@ def solve_beam(spans, sup_df, loads_df, params):
     for i, row in sup_df.iterrows():
         n_idx = int(safe_float(row.get('id', i)))
         if n_idx < n_nodes:
-            reactions[f"R{n_idx}"] = R_final[2*n_idx]
+            # 🛠️ FIX: ถ้าระบบไม่มีโหลดเลย Reaction ต้องเป็น 0
+            reactions[f"R{n_idx}"] = 0.0 if not has_any_load else R_final[2*n_idx]
 
     return np.array(x_total), np.array(moment_total), np.array(shear_total), np.array(def_total), reactions
