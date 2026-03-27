@@ -143,7 +143,9 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
         span_idx = int(l['span_index'])
         start_x_span = cum_dist[span_idx]
         mag_raw = l['mag']
-        mag_kN = mag_raw / 1000.0  # N -> kN
+        
+        # แก้ไขจุดที่ 1: ค่าที่รับมาเป็น kN อยู่แล้ว ไม่ต้องหาร 1000
+        mag_kN = mag_raw  
         
         # Calculate visual height ratio (0.15 to 0.6)
         ratio = abs(mag_raw) / max_mag
@@ -216,17 +218,18 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
 
     # ROW 2: SHEAR FORCE
     fig.add_hline(y=0, line_color="black", line_width=1, row=2, col=1)
+    # แก้ไขจุดที่ 2: เอา /1000 ออกจาก shear
     fig.add_trace(go.Scatter(
-        x=res_df['x'], y=res_df['shear']/1000, 
+        x=res_df['x'], y=res_df['shear'], 
         mode='lines', name='Shear (kN)', line=dict(color='#e74c3c', width=2),
         fill='tozeroy', fillcolor='rgba(231, 76, 60, 0.1)'
     ), row=2, col=1)
     
-    v_max = res_df['shear'].max() / 1000
-    v_min = res_df['shear'].min() / 1000
+    v_max = res_df['shear'].max()
+    v_min = res_df['shear'].min()
     for val in [v_max, v_min]:
         if abs(val) > 0.01:
-            idx = (res_df['shear']/1000 - val).abs().idxmin()
+            idx = (res_df['shear'] - val).abs().idxmin()
             fig.add_annotation(
                 x=res_df['x'].iloc[idx], y=val,
                 text=f"<b>{val:.2f}</b>", showarrow=False, yshift=10 if val>0 else -10,
@@ -235,17 +238,18 @@ def plot_analysis_results(res_df, spans, supports, loads, reactions):
 
     # ROW 3: BENDING MOMENT
     fig.add_hline(y=0, line_color="black", line_width=1, row=3, col=1)
+    # แก้ไขจุดที่ 3: เอา /1000 ออกจาก moment
     fig.add_trace(go.Scatter(
-        x=res_df['x'], y=res_df['moment']/1000, 
+        x=res_df['x'], y=res_df['moment'], 
         mode='lines', name='Moment (kN-m)', line=dict(color='#27ae60', width=2),
         fill='tozeroy', fillcolor='rgba(39, 174, 96, 0.1)'
     ), row=3, col=1)
 
-    m_max = res_df['moment'].max() / 1000
-    m_min = res_df['moment'].min() / 1000
+    m_max = res_df['moment'].max()
+    m_min = res_df['moment'].min()
     for val in [m_max, m_min]:
         if abs(val) > 0.01:
-            idx = (res_df['moment']/1000 - val).abs().idxmin()
+            idx = (res_df['moment'] - val).abs().idxmin()
             fig.add_annotation(
                 x=res_df['x'].iloc[idx], y=val,
                 text=f"<b>{val:.2f}</b>", 
@@ -409,7 +413,8 @@ def render_design_view(res_package):
             h_m = float(val_h) / 1000.0
             L = spans[i]
             
-            sw_mag = 24000 * b_m * h_m 
+            # แก้ไขจุดที่ 4: เปลี่ยนการคำนวณ Unit Weight เป็น kN/m3 (24 kN/m3)
+            sw_mag = 24 * b_m * h_m  
             
             sw_load = {
                 'type': 'U',
@@ -439,7 +444,7 @@ def render_design_view(res_package):
         combo_data.insert(0, {
             "Load Type": "Self-Weight (SW)", 
             "Factor": f"{dl_factor:.2f}", 
-            "Description": "Computed from Beam Section (2400 kg/m³)"
+            "Description": "Computed from Beam Section (24 kN/m³)" # Update label
         })
     else:
         combo_data.append({
@@ -465,7 +470,8 @@ def render_design_view(res_package):
         st.plotly_chart(fig, use_container_width=True)
         
         st.subheader("Reactions")
-        r_data = [{"Support": k, "Reaction (kN)": f"{val/1000:.2f}"} for k, val in react.items()]
+        # แก้ไขจุดที่ 5: เอา /1000 ออกจาก Reaction
+        r_data = [{"Support": k, "Reaction (kN)": f"{val:.2f}"} for k, val in react.items()]
         st.dataframe(pd.DataFrame(r_data), use_container_width=True, hide_index=True)
 
     # --- TAB 2: Design Details ---
