@@ -243,3 +243,64 @@ def check_crack_width(Ma_svc, b, h, d, As, n_bars, fc, Es=200000):
     w_mm = (w_thou / 1000) * 25.4
     
     return w_mm, fs
+
+def arrange_bars_into_layers(total_n, db, b, cover, stir_db):
+    """
+    [NEW] คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
+    """
+    if total_n <= 0:
+        return []
+        
+    inner_w = b - (2 * cover) - (2 * stir_db)
+    min_spacing = max(25.0, db) # ACI: ระยะห่างช่องไฟขั้นต่ำ 25 mm หรือเท่ากับ db
+    
+    # คำนวณจำนวนเหล็กสูงสุดที่ใส่ได้ใน 1 ชั้น
+    max_per_layer = int((inner_w + min_spacing) // (db + min_spacing))
+    if max_per_layer < 2: 
+        max_per_layer = 2 # อย่างน้อยต้องมีเหล็กมุม 2 เส้น
+        
+    layers = []
+    rem = int(total_n)
+    while rem > 0:
+        take = min(rem, max_per_layer)
+        layers.append({'n': take, 'db': db})
+        rem -= take
+    return layers
+
+def design_flexure_auto(Mu_kNm, b, h, cover, stir_db, main_db, fc, fy):
+    """
+    [NEW] ระบบคำนวณเหล็กอัตโนมัติ: หา As -> จัดชั้น -> คำนวณ d จริง -> วนลูปเช็คซ้ำ
+    Returns: layers, d_actual, as_req, as_prov, status
+    """
+    if Mu_kNm == 0:
+        return [], float(h - cover - stir_db - (main_db/2)), 0.0, 0.0, "OK"
+        
+    # 1. สมมติฐานแรกลองให้เหล็กเรียงชั้นเดียวก่อน
+    d_assume = h - cover - stir_db - (main_db / 2)
+    as_req, _, is_over_max = get_as_req(Mu_kNm, d_assume, fc, fy, b)
+    
+    if is_over_max:
+        return [], float(d_assume), float(as_req), 0.0, "FAIL (Section too small/Need Compression Steel)"
+        
+    a_bar = np.pi * (main_db / 2)**2
+    n_bars = int(np.ceil(as_req / a_bar))
+    if n_bars < 2: n_bars = 2 # ขั้นต่ำ 2 เส้น
+    
+    # 2. เข้าลูปคำนวณ (เผื่อดันเหล็กขึ้นชั้น 2 แล้ว d ลด ทำให้รับโมเมนต์ไม่พอ)
+    max_iter = 5
+    for _ in range(max_iter):
+        # จัดชั้นเหล็ก
+        layers = arrange_bars_into_layers(n_bars, main_db, b, cover, stir_db)
+        
+        # หา d จริง จากการจัดชั้น
+        d_actual, as_prov, y_bar = get_centroid_and_d(layers, h, cover, stir_db)
+        
+        # รีเช็ค As_req ใหม่ด้วย d_actual ที่ลดลง
+        as_req_new, _, _ = get_as_req(Mu_kNm, d_actual, fc, fy, b)
+        
+        if as_prov >= as_req_new:
+            break # เหล็กพอรับโมเมนต์แล้ว! หลุดลูปได้เลย
+        else:
+            n_bars += 1 # ถ้า d ลดจนเหล็กเดิมรับไม่พอ ให้เพิ่มเหล็ก 1 เส้นแล้ววนลูปจัดชั้นใหม่
+            
+    return layers, float(d_actual), float(as_req_new), float(as_prov), "OK"
