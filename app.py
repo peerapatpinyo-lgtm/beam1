@@ -50,47 +50,61 @@ def plot_cross_section_fixed(b, h, cover, top_layers, bot_layers, shear_res):
     )
     ax.add_patch(stirrup_rect)
     
-    # Helper to draw bars
+    # Helper to draw bars (อัปเกรดให้รองรับการแยกชั้น)
     def draw_layer(layers, is_top):
         if not layers: return
-        n_bars = sum(l['n'] for l in layers)
-        if n_bars == 0: return
         
-        dia = layers[0]['db']
-        y_pos = h - cover - dia/2 if is_top else cover + dia/2
-        color = '#c0392b' if is_top else '#27ae60'
+        # ตั้งพิกัด Y เริ่มต้นสำหรับเหล็กชั้นนอกสุด
+        outer_dia = layers[0]['db']
+        current_y = h - cover - outer_dia/2 if is_top else cover + outer_dia/2
         
-        start_x = cover + dia/2
-        end_x = b - cover - dia/2
-        
-        if n_bars > 1:
-            gap = (end_x - start_x) / (n_bars - 1)
-            for i in range(n_bars):
-                circle = patches.Circle((start_x + i*gap, y_pos), radius=dia/2, color=color, zorder=10)
+        for idx, layer in enumerate(layers):
+            n_bars = layer.get('n', 0)
+            if n_bars == 0: continue
+            
+            dia = layer.get('db', 16)
+            color = '#c0392b' if is_top else '#27ae60'
+            
+            # คำนวณระยะร่นของ Y สำหรับชั้นที่ 2 เป็นต้นไป (Clear Spacing 25mm)
+            if idx > 0:
+                prev_dia = layers[idx-1]['db']
+                y_shift = (prev_dia/2) + 25.0 + (dia/2)
+                current_y = current_y - y_shift if is_top else current_y + y_shift
+
+            start_x = cover + dia/2
+            end_x = b - cover - dia/2
+            
+            # เริ่มวาดวงกลมเหล็กในชั้นนั้นๆ
+            if n_bars > 1:
+                gap = (end_x - start_x) / (n_bars - 1)
+                for i in range(n_bars):
+                    circle = patches.Circle((start_x + i*gap, current_y), radius=dia/2, color=color, zorder=10)
+                    ax.add_patch(circle)
+            else:
+                circle = patches.Circle((b/2, current_y), radius=dia/2, color=color, zorder=10)
                 ax.add_patch(circle)
-        else:
-            circle = patches.Circle((b/2, y_pos), radius=dia/2, color=color, zorder=10)
-            ax.add_patch(circle)
 
     # Draw Rebars
     draw_layer(top_layers, is_top=True)
     draw_layer(bot_layers, is_top=False)
 
-    # Annotations
+    # Annotations (อัปเดตให้แสดงข้อความแยกชั้นสวยๆ)
     text_x = b + (b * 0.1)
-    n_top = sum(l['n'] for l in top_layers)
-    n_bot = sum(l['n'] for l in bot_layers)
-    d_top = top_layers[0]['db'] if top_layers else 0
-    d_bot = bot_layers[0]['db'] if bot_layers else 0
-
-    ax.text(text_x, h - cover, f"Top: {n_top}-DB{int(d_top)}", color='#c0392b', fontsize=10, fontweight='bold', va='center')
-    ax.text(text_x, cover + d_bot, f"Bot: {n_bot}-DB{int(d_bot)}", color='#27ae60', fontsize=10, fontweight='bold', va='center')
+    
+    top_label = " + ".join([f"{int(l['n'])}-DB{int(l['db'])}" for l in top_layers if l['n'] > 0])
+    bot_label = " + ".join([f"{int(l['n'])}-DB{int(l['db'])}" for l in bot_layers if l['n'] > 0])
+    
+    if top_label:
+        ax.text(text_x, h - cover, f"Top:\n{top_label}", color='#c0392b', fontsize=10, fontweight='bold', va='top')
+    if bot_label:
+        ax.text(text_x, cover, f"Bot:\n{bot_label}", color='#27ae60', fontsize=10, fontweight='bold', va='bottom')
+    
     ax.text(text_x, h/2, f"Stir: RB{int(shear_res['db'])}@{int(shear_res['s'])}", color='#2c3e50', fontsize=9, va='center')
 
     ax.set_title(f"Section {int(b)}x{int(h)} mm", fontsize=12, fontweight='bold', pad=15)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_xlim(-50, b + 250) 
+    ax.set_xlim(-50, b + max(250, b*0.6))  # ขยายขอบขวาเผื่อ Text ยาว
     ax.set_ylim(-50, h + 50)
     plt.tight_layout()
     return fig
