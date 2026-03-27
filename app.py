@@ -232,8 +232,8 @@ else:
             st.plotly_chart(fig, width='stretch', key=unique_chart_key)
             
             # --- FIXED: Key Metrics Absolute Max Computation ---
-            v_max_val = np.max(np.abs(V_plot)) / 1000
-            m_max_val = np.max(np.abs(M_plot)) / 1000
+            v_max_val = np.max(np.abs(V_plot)) 
+            m_max_val = np.max(np.abs(M_plot)) 
             d_max_val = np.max(np.abs(D_plot)) * 1000
 
             c_m1, c_m2, c_m3 = st.columns(3)
