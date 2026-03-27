@@ -237,9 +237,9 @@ else:
             d_max_val = np.max(np.abs(D_plot)) * 1000
 
             c_m1, c_m2, c_m3 = st.columns(3)
-            c_m1.metric("Max Shear (V_max)", f"{v_max_val:.2f} kN")
-            c_m2.metric("Max Moment (M_max)", f"{m_max_val:.2f} kNm")
-            c_m3.metric("Max Deflection", f"{d_max_val:.2f} mm")
+            c_m1.metric("Max Shear (V_max)", f"{v_max_val:.3f} kN")
+            c_m2.metric("Max Moment (M_max)", f"{m_max_val:.3f} kNm")
+            c_m3.metric("Max Deflection", f"{d_max_val:.3f} mm")
             
         # ================= TAB 2: CONCRETE DESIGN =================
         with tab2:
