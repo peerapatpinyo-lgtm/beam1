@@ -27,36 +27,7 @@ def auto_arrange_bars(total_n, db, b, cover, stir_db):
         rem -= take
     return layers
 
-def get_normalized_layers(res, side, b, cover, stir_db):
-    """ 
-    [NEW & IMPROVED] ดึงข้อมูลชั้นเหล็ก และบังคับจัดชั้นใหม่ 100% 
-    เพื่อป้องกันปัญหาไฟล์หลักส่งเหล็กมากองรวมกันเป็นก้อนเดียว
-    """
-    total_n = 0
-    db_size = 16.0 # ค่าตั้งต้น
-    
-    # 1. รวบรวมจำนวนเหล็กทั้งหมด (n) ไม่ว่าจะส่งมาใน format ไหน
-    layers = res.get(f'{side}_layers')
-    if layers:
-        total_n = sum([int(l.get('n', 0)) for l in layers])
-        # ดึงขนาดเหล็กจากเส้นแรกที่เจอ
-        for l in layers:
-            if int(l.get('n', 0)) > 0:
-                db_size = float(l.get('db', 16))
-                break
-    elif res.get(side) and 'all_layers' in res[side]:
-        layers = res[side]['all_layers']
-        total_n = sum([int(l.get('n', 0)) for l in layers])
-        for l in layers:
-            if int(l.get('n', 0)) > 0:
-                db_size = float(l.get('db', 16))
-                break
-    else:
-        total_n = int(res.get(f'{side}_n', 0))
-        db_size = float(res.get(f'{side}_db', 16))
 
-    # 2. ล้างไพ่! บังคับโยนจำนวนเหล็กทั้งหมดเข้าเครื่องจัดชั้นอัตโนมัติ
-    return auto_arrange_bars(total_n, db_size, b, cover, stir_db)
 
 def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm):
     """
@@ -171,6 +142,53 @@ def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm
     plt.close(fig)
     return f_svg.getvalue(), None
 
+def get_normalized_layers(res, side, b, cover, stir_db):
+    """ 
+    [NEW & IMPROVED] เครื่องดูดข้อมูลเหล็กครอบจักรวาล 
+    รับประกันว่ากวาดจำนวนเหล็กได้ครบ 100% ไม่ว่าจะส่ง data มาแบบไหน
+    """
+    total_n = 0
+    db_size = 16.0 # ค่าตั้งต้นเผื่อหาไม่เจอ
+    
+    # แบบที่ 1: ส่งมาเป็น List ตรงๆ เช่น res['bot_layers'] = [{'n':6, 'db':16}]
+    if f'{side}_layers' in res and isinstance(res[f'{side}_layers'], list):
+        layers = res[f'{side}_layers']
+        total_n = sum([int(float(l.get('n', 0))) for l in layers])
+        for l in layers:
+            if int(float(l.get('n', 0))) > 0: 
+                db_size = float(l.get('db', 16))
+                break
+
+    # แบบที่ 2: ซ้อนอยู่ใน key 'top' หรือ 'bot'
+    elif side in res:
+        side_data = res[side]
+        if isinstance(side_data, list): # ซ้อนเป็น List
+            total_n = sum([int(float(l.get('n', 0))) for l in side_data])
+            for l in side_data:
+                if int(float(l.get('n', 0))) > 0: db_size = float(l.get('db', 16)); break
+                
+        elif isinstance(side_data, dict): # ซ้อนเป็น Dict
+            if 'all_layers' in side_data:
+                layers = side_data['all_layers']
+                total_n = sum([int(float(l.get('n', 0))) for l in layers])
+                for l in layers:
+                    if int(float(l.get('n', 0))) > 0: db_size = float(l.get('db', 16)); break
+            else:
+                total_n = int(float(side_data.get('n', 0)))
+                db_size = float(side_data.get('db', 16))
+    
+    # แบบที่ 3: แปะมาดื้อๆ (Flat format) เช่น res['bot_n'] = 6
+    if total_n == 0:
+        try:
+            total_n = int(float(res.get(f'{side}_n', 0)))
+            db_size = float(res.get(f'{side}_db', db_size))
+        except:
+            pass
+
+    # นำจำนวนเหล็กทั้งหมดที่ขุดเจอ โยนเข้าเครื่องแยกชั้นอัตโนมัติ
+    return auto_arrange_bars(total_n, db_size, b, cover, stir_db)
+
+
 def plot_cross_section(res):
     """
     วาดรูปตัดขวางคาน: แสดงรายละเอียดเหล็ก 2 ชั้นให้ตรงความจริง
@@ -180,7 +198,7 @@ def plot_cross_section(res):
     stir_db = float(res.get('stir_db', 9))
     stir_s = res.get('stir_s') or res.get('shear', {}).get('s') or res.get('s')
     
-    # ดึงข้อมูลเหล็กด้วยระบบอัตโนมัติ (ได้เป็นชั้นๆ ชัวร์)
+    # ดึงข้อมูลเหล็กด้วยระบบอัตโนมัติ (บังคับจัดชั้นชัวร์ 100%)
     top_layers = get_normalized_layers(res, 'top', b, cover, stir_db)
     bot_layers = get_normalized_layers(res, 'bot', b, cover, stir_db)
     
@@ -203,7 +221,7 @@ def plot_cross_section(res):
         if s_val > s_max_limit:
             warnings.append(f"Stirrup S={int(s_val)} > Smax={int(s_max_limit)}mm")
 
-    # [NEW] ขอบเขตซ้ายขวาของเหล็กเส้น (เพื่อจัดให้ตรงกันทุกชั้น)
+    # ขอบเขตซ้ายขวาของเหล็กเส้น (เพื่อจัดให้ตรงกันทุกชั้น)
     left_cx = (-b/2) + cover + stir_db
     right_cx = (b/2) - cover - stir_db
 
@@ -237,7 +255,7 @@ def plot_cross_section(res):
                 ax.add_patch(patches.Circle((x, y_p), db/2, color='#008c00', zorder=10))
             curr_y_bot += (db + 25.0) # ระยะห่างระหว่างชั้น (Clear Spacing 25mm)
 
-    # Label ข้อมูล
+    # Label ข้อมูล (รวมร่าง Text ให้อ่านง่าย)
     text_x = b/2 + 25
     top_t = " + ".join([f"{int(l['n'])}DB{int(l['db'])}" for l in top_layers if int(l.get('n',0)) > 0])
     bot_t = " + ".join([f"{int(l['n'])}DB{int(l['db'])}" for l in bot_layers if int(l.get('n',0)) > 0])
