@@ -17,24 +17,35 @@ def solve_beam(spans, sup_df, loads_df, params):
     if sup_df is None or sup_df.empty:
         sup_df = pd.DataFrame([{'id': 0, 'type': 'Pinned'}, {'id': len(spans), 'type': 'Pinned'}])
 
+
     # --- 0.2 Parameter Calculation ---
     b_raw = safe_float(params.get('b', 300), 300)
     h_raw = safe_float(params.get('h', 500), 500)
+    
+    # 1. ให้ b และ h เป็นหน่วย เมตร (m) ทั้งหมด
     b = b_raw / 1000.0 if b_raw >= 10 else b_raw
     h = h_raw / 1000.0 if h_raw >= 10 else h_raw
 
-    if 'fc' in params:
-        fc_mpa = safe_float(params['fc']) * 0.0980665
-        E = 4700 * np.sqrt(fc_mpa) * 1e3 if fc_mpa > 0 else 25e6
-    else:
-        E = safe_float(params.get('E', 25e6), 25e6)
-        if E > 1e8: E = E / 1000.0 
-            
+    # 2. คำนวณ I ในหน่วย m^4
     if 'I' in params:
         I = safe_float(params['I'], (b * h**3) / 12.0)
-        if I > 1: I = I / 1e12
+        if I > 1: I = I / 1e12  # ถ้าส่งมาเป็น mm^4 ให้แปลงเป็น m^4
     else:
         I = (b * h**3) / 12.0
+
+    # 3. คำนวณ E ให้ออกมาเป็นหน่วย kN/m^2 (kPa)
+    if 'fc' in params:
+        # สมมติว่ารับ fc เป็น ksc ให้แปลงเป็น MPa
+        fc_mpa = safe_float(params['fc']) * 0.0980665
+        
+        # E สูตร ACI คือ MPa (N/mm^2)
+        # 1 MPa = 1,000 kN/m^2
+        E_mpa = 4700 * np.sqrt(fc_mpa) if fc_mpa > 0 else 25000
+        E = E_mpa * 1000.0  # ตอนนี้ E เป็น kN/m^2 แล้ว!
+    else:
+        E = safe_float(params.get('E', 25e6), 25e6)
+        # สมมติส่งมา 2.5e10 N/m^2 แปลงเป็น kN/m^2
+        if E > 1e8: E = E / 1000.0
 
     nu = 0.2  
     G = E / (2.0 * (1.0 + nu)) 
