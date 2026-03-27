@@ -35,17 +35,18 @@ def solve_beam(spans, sup_df, loads_df, params):
 
     # 3. คำนวณ E ให้ออกมาเป็นหน่วย kN/m^2 (kPa)
     if 'fc' in params:
-        # สมมติว่ารับ fc เป็น ksc ให้แปลงเป็น MPa
-        fc_mpa = safe_float(params['fc']) * 0.0980665
+        # รับค่า fc ที่เป็น MPa มาจาก params โดยตรง (เอาตัวคูณ 0.098... ออก)
+        fc_mpa = safe_float(params['fc'])
         
         # E สูตร ACI คือ MPa (N/mm^2)
         # 1 MPa = 1,000 kN/m^2
-        E_mpa = 4700 * np.sqrt(fc_mpa) if fc_mpa > 0 else 25000
+        E_mpa = 4700 * np.sqrt(fc_mpa) if fc_mpa > 0 else 25000.0
         E = E_mpa * 1000.0  # ตอนนี้ E เป็น kN/m^2 แล้ว!
     else:
         E = safe_float(params.get('E', 25e6), 25e6)
         # สมมติส่งมา 2.5e10 N/m^2 แปลงเป็น kN/m^2
-        if E > 1e8: E = E / 1000.0
+        if E > 1e8: 
+            E = E / 1000.0
 
     nu = 0.2  
     G = E / (2.0 * (1.0 + nu)) 
