@@ -4,6 +4,41 @@ import io
 import numpy as np
 import textwrap
 
+def auto_arrange_bars(total_n, db, b, cover, stir_db):
+    """
+    [NEW] คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
+    """
+    if total_n <= 0:
+        return []
+        
+    inner_w = b - (2 * cover) - (2 * stir_db)
+    min_spacing = max(25.0, db) # ระยะห่างช่องไฟขั้นต่ำ 25 mm หรือเท่ากับขนาดเหล็ก
+    
+    # คำนวณจำนวนเหล็กสูงสุดที่ใส่ได้ใน 1 ชั้น
+    max_per_layer = int((inner_w + min_spacing) // (db + min_spacing))
+    if max_per_layer < 2: 
+        max_per_layer = 2 # อย่างน้อยต้องมีเหล็กมุม 2 เส้น
+        
+    layers = []
+    rem = int(total_n)
+    while rem > 0:
+        take = min(rem, max_per_layer)
+        layers.append({'n': take, 'db': db})
+        rem -= take
+    return layers
+
+def get_normalized_layers(res, side, b, cover, stir_db):
+    """ [NEW] ดึงข้อมูลชั้นเหล็ก ถ้าไม่มีให้คำนวณจัดชั้นอัตโนมัติ """
+    layers = res.get(f'{side}_layers')
+    if not layers:
+        if res.get(side) and 'all_layers' in res[side]:
+            layers = res[side]['all_layers']
+        else:
+            n = int(res.get(f'{side}_n', 0))
+            db = float(res.get(f'{side}_db', 12))
+            layers = auto_arrange_bars(n, db, b, cover, stir_db)
+    return layers
+
 def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm):
     """
     วาดรูปตัดยาวคาน พร้อมรายละเอียดเหล็กเสริมและเหล็กปลอก
@@ -47,52 +82,50 @@ def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm
 
     # 4. วาดเหล็กเสริม
     x_curr = 0
-    v_spacing = 35.0 
     for i, span_L in enumerate(spans_mm):
         res = design_res[i]
-        stir_db = res.get('stir_db', 9)
+        b_mm = float(res.get('b', 200)) # ดึงความกว้างคานมาใช้คำนวณชั้น
+        stir_db = float(res.get('stir_db', 9))
         stir_s = res.get('stir_s') or res.get('shear', {}).get('s', 150)
         
-        # --- Prepare Top Layers ---
-        # Fallback if 'all_layers' doesn't exist but basic 'top_n' does
-        top_layers = res.get('top', {}).get('all_layers', [])
-        if not top_layers and res.get('top_n', 0) > 0:
-            top_layers = [{'n': res.get('top_n'), 'db': res.get('top_db', 12)}]
+        # --- Prepare Layers ---
+        top_layers = get_normalized_layers(res, 'top', b_mm, cover_mm, stir_db)
+        bot_layers = get_normalized_layers(res, 'bot', b_mm, cover_mm, stir_db)
 
+        # วาดเหล็กบน
         curr_y_top = v_h - (cover_mm + stir_db)
         t_labels = []
         for l_idx, layer in enumerate(top_layers):
             if layer['n'] > 0:
                 t_labels.append(f"L{l_idx+1}: {int(layer['n'])}DB{int(layer['db'])}")
-                # Drawing Logic: Continuous top bar for simplicity, cut-offs for extra layers
+                db_size = layer['db']
+                
                 if l_idx == 0: 
                     x_s, x_e = x_curr, x_curr + span_L
                     ax.plot([x_s, x_e], [curr_y_top, curr_y_top], color='#d30000', lw=2.5, zorder=10)
                 else:
-                    cut_off = span_L * 0.25 # Simplify cut-off visualization
+                    cut_off = span_L * 0.25 
                     ax.plot([x_curr, x_curr + cut_off], [curr_y_top, curr_y_top], color='#d30000', lw=2.5, zorder=10)
                     ax.plot([x_curr + span_L - cut_off, x_curr + span_L], [curr_y_top, curr_y_top], color='#d30000', lw=2.5, zorder=10)
                 
-                curr_y_top -= v_spacing
+                curr_y_top -= (db_size + 25.0) # ขยับชั้นลงตามความจริง
         
-        # --- Prepare Bottom Layers ---
-        bot_layers = res.get('bot', {}).get('all_layers', [])
-        if not bot_layers and res.get('bot_n', 0) > 0:
-            bot_layers = [{'n': res.get('bot_n'), 'db': res.get('bot_db', 12)}]
-
+        # วาดเหล็กล่าง
         curr_y_bot = cover_mm + stir_db
         b_labels = [] 
         for l_idx, layer in enumerate(bot_layers):
             if layer['n'] > 0:
                 b_labels.append(f"L{l_idx+1}: {int(layer['n'])}DB{int(layer['db'])}")
+                db_size = layer['db']
+                
                 if l_idx == 0: 
-                    x_s, x_e = x_curr + 50, x_curr + span_L - 50 # Hook allowance
+                    x_s, x_e = x_curr + 50, x_curr + span_L - 50 
                 else:
                     offset = span_L * 0.125
                     x_s, x_e = x_curr + offset, x_curr + span_L - offset
                 
                 ax.plot([x_s, x_e], [curr_y_bot, curr_y_bot], color='#008c00', lw=2.5, zorder=10)
-                curr_y_bot += v_spacing
+                curr_y_bot += (db_size + 25.0) # ขยับชั้นขึ้นตามความจริง
         
         mid = x_curr + span_L/2
         
@@ -121,31 +154,16 @@ def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm
 
 def plot_cross_section(res):
     """
-    วาดรูปตัดขวางคาน: แสดงรายละเอียด Stirrups เทียบกับ Smax
+    วาดรูปตัดขวางคาน: แสดงรายละเอียดเหล็ก 2 ชั้นให้ตรงความจริง
     """
     b, h = float(res.get('b', 200)), float(res.get('h', 400))
     cover = float(res.get('cover', 25))
     stir_db = float(res.get('stir_db', 9))
     stir_s = res.get('stir_s') or res.get('shear', {}).get('s') or res.get('s')
     
-    # ดึงข้อมูลเหล็ก (รองรับทั้งแบบ Simple และ Detailed)
-    # Top
-    top_layers = res.get('top_layers')
-    if not top_layers:
-        # Fallback to simple
-        if res.get('top') and 'all_layers' in res['top']:
-            top_layers = res['top']['all_layers']
-        else:
-            top_layers = [{'n': res.get('top_n', 0), 'db': res.get('top_db', 12)}]
-            
-    # Bot
-    bot_layers = res.get('bot_layers')
-    if not bot_layers:
-         # Fallback to simple
-        if res.get('bot') and 'all_layers' in res['bot']:
-            bot_layers = res['bot']['all_layers']
-        else:
-            bot_layers = [{'n': res.get('bot_n', 0), 'db': res.get('bot_db', 12)}]
+    # ดึงข้อมูลเหล็กด้วยระบบอัตโนมัติ (ได้เป็นชั้นๆ ชัวร์)
+    top_layers = get_normalized_layers(res, 'top', b, cover, stir_db)
+    bot_layers = get_normalized_layers(res, 'bot', b, cover, stir_db)
     
     fig, ax = plt.subplots(figsize=(6, 5)) 
     x0, y0 = -b/2, -h/2
@@ -166,21 +184,24 @@ def plot_cross_section(res):
         if s_val > s_max_limit:
             warnings.append(f"Stirrup S={int(s_val)} > Smax={int(s_max_limit)}mm")
 
+    # [NEW] ขอบเขตซ้ายขวาของเหล็กเส้น (เพื่อจัดให้ตรงกันทุกชั้น)
+    left_cx = (-b/2) + cover + stir_db
+    right_cx = (b/2) - cover - stir_db
+
     # วาดเหล็กบน
     curr_y_top = (h/2) - cover - stir_db
     for idx, l in enumerate(top_layers):
         n, db = int(l.get('n', 0)), float(l.get('db', 16))
         if n > 0:
             y_p = curr_y_top - (db/2)
-            # กระจายเหล็กให้สวยงาม
             if n > 1:
-                x_p = np.linspace(s_x+stir_db+db/2, s_x+s_w-stir_db-db/2, n)
+                x_p = np.linspace(left_cx + (db/2), right_cx - (db/2), n)
             else:
                 x_p = [0] # ตรงกลาง
 
             for x in x_p: 
                 ax.add_patch(patches.Circle((x, y_p), db/2, color='#d30000', zorder=10))
-            curr_y_top -= (db + 25.0)
+            curr_y_top -= (db + 25.0) # ระยะห่างระหว่างชั้น (Clear Spacing 25mm)
 
     # วาดเหล็กล่าง
     curr_y_bot = (-h/2) + cover + stir_db
@@ -189,13 +210,13 @@ def plot_cross_section(res):
         if n > 0:
             y_p = curr_y_bot + (db/2)
             if n > 1:
-                x_p = np.linspace(s_x+stir_db+db/2, s_x+s_w-stir_db-db/2, n)
+                x_p = np.linspace(left_cx + (db/2), right_cx - (db/2), n)
             else:
                 x_p = [0] # ตรงกลาง
                 
             for x in x_p: 
                 ax.add_patch(patches.Circle((x, y_p), db/2, color='#008c00', zorder=10))
-            curr_y_bot += (db + 25.0)
+            curr_y_bot += (db + 25.0) # ระยะห่างระหว่างชั้น (Clear Spacing 25mm)
 
     # Label ข้อมูล
     text_x = b/2 + 25
