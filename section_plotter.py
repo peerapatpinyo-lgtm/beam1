@@ -28,16 +28,35 @@ def auto_arrange_bars(total_n, db, b, cover, stir_db):
     return layers
 
 def get_normalized_layers(res, side, b, cover, stir_db):
-    """ [NEW] ดึงข้อมูลชั้นเหล็ก ถ้าไม่มีให้คำนวณจัดชั้นอัตโนมัติ """
+    """ 
+    [NEW & IMPROVED] ดึงข้อมูลชั้นเหล็ก และบังคับจัดชั้นใหม่ 100% 
+    เพื่อป้องกันปัญหาไฟล์หลักส่งเหล็กมากองรวมกันเป็นก้อนเดียว
+    """
+    total_n = 0
+    db_size = 16.0 # ค่าตั้งต้น
+    
+    # 1. รวบรวมจำนวนเหล็กทั้งหมด (n) ไม่ว่าจะส่งมาใน format ไหน
     layers = res.get(f'{side}_layers')
-    if not layers:
-        if res.get(side) and 'all_layers' in res[side]:
-            layers = res[side]['all_layers']
-        else:
-            n = int(res.get(f'{side}_n', 0))
-            db = float(res.get(f'{side}_db', 12))
-            layers = auto_arrange_bars(n, db, b, cover, stir_db)
-    return layers
+    if layers:
+        total_n = sum([int(l.get('n', 0)) for l in layers])
+        # ดึงขนาดเหล็กจากเส้นแรกที่เจอ
+        for l in layers:
+            if int(l.get('n', 0)) > 0:
+                db_size = float(l.get('db', 16))
+                break
+    elif res.get(side) and 'all_layers' in res[side]:
+        layers = res[side]['all_layers']
+        total_n = sum([int(l.get('n', 0)) for l in layers])
+        for l in layers:
+            if int(l.get('n', 0)) > 0:
+                db_size = float(l.get('db', 16))
+                break
+    else:
+        total_n = int(res.get(f'{side}_n', 0))
+        db_size = float(res.get(f'{side}_db', 16))
+
+    # 2. ล้างไพ่! บังคับโยนจำนวนเหล็กทั้งหมดเข้าเครื่องจัดชั้นอัตโนมัติ
+    return auto_arrange_bars(total_n, db_size, b, cover, stir_db)
 
 def plot_longitudinal_section_detailed(spans, sup_df, design_res, h_mm, cover_mm):
     """
