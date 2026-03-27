@@ -1,3 +1,4 @@
+#app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -100,7 +101,6 @@ st.markdown('<div class="main-header">🏗️ RC Beam Analysis & Design Pro</div
 # --- 5. SIDEBAR INPUTS ---
 with st.sidebar:
     params, n_spans, spans, sup_df, raw_user_loads_df, stable = input_handler.render_all_sidebar_inputs()
-    # 🚫 ลบส่วนยุ่งเหยิง SMART UNIT FIXER ออกไปเรียบร้อย!
 
 # --- MAIN LOGIC ---
 if not stable:
@@ -115,11 +115,11 @@ else:
         st.markdown("---")
         include_sw = st.checkbox("➕ Include Beam Self-weight", value=True)
         
-        # --- FIXED: Self-Weight Calculation (Unit: kN/m) ---
+        # Self-Weight Calculation (Unit: kN/m)
         b_m = params['b'] / 1000.0
         h_m = params['h'] / 1000.0
         
-        # คอนกรีต 24.0 kN/m3 (ใช้หน่วย kN เป็นมาตรฐาน)
+        # คอนกรีต 24.0 kN/m3
         sw_val = b_m * h_m * 24.0  
         
         if include_sw:
@@ -154,7 +154,7 @@ else:
 
         clean_user_loads = raw_user_loads_df.copy(deep=True)
         
-        # 🛠️ FIX 1: จัดระเบียบ Type และ Case ของ User Load
+        # จัดระเบียบ Type และ Case ของ User Load
         if not clean_user_loads.empty:
             if 'type' in clean_user_loads.columns:
                 clean_user_loads['type'] = clean_user_loads['type'].apply(
@@ -174,7 +174,7 @@ else:
                     'mag': sw_val,  # หน่วย kN/m
                     'dist': spans[i], 
                     'd_start': 0, 
-                    'case': 'DL'    # เปลี่ยนจาก 'SW' เป็น 'DL' 
+                    'case': 'DL'    
                 })
             df_sw_only = pd.DataFrame(sw_rows)
             final_calc_loads = pd.concat([clean_user_loads, df_sw_only], ignore_index=True)
@@ -204,7 +204,14 @@ else:
             with cols_chk[0]:
                 st.info(status_msg)
             with cols_chk[1]:
-                total_factored_load = calc_loads_ult['mag'].sum() if not calc_loads_ult.empty else 0
+                # FIXED: Calculate total force correctly by considering uniform load distance
+                if not calc_loads_ult.empty:
+                    total_factored_load = sum(
+                        row['mag'] * row['dist'] if row['type'] == 'U' else row['mag'] 
+                        for _, row in calc_loads_ult.iterrows()
+                    )
+                else:
+                    total_factored_load = 0
                 st.caption(f"🔍 **Total Factored Load (Check):** {total_factored_load:,.2f} kN") 
 
             with st.expander("🛠️ Debug: Check Loads"):
@@ -224,11 +231,15 @@ else:
             )
             st.plotly_chart(fig, width='stretch', key=unique_chart_key)
             
-            # Key Metrics
+            # --- FIXED: Key Metrics Absolute Max Computation ---
+            v_max_val = np.max(np.abs(V_plot))
+            m_max_val = np.max(np.abs(M_plot))
+            d_max_val = np.max(np.abs(D_plot)) * 1000
+
             c_m1, c_m2, c_m3 = st.columns(3)
-            c_m1.metric("Max Shear (V_max)", f"{max(abs(V_plot)):.2f} kN")
-            c_m2.metric("Max Moment (M_max)", f"{max(M_plot):.2f} kNm")
-            c_m3.metric("Max Deflection", f"{max(abs(D_plot))*1000:.2f} mm")
+            c_m1.metric("Max Shear (V_max)", f"{v_max_val:.2f} kN")
+            c_m2.metric("Max Moment (M_max)", f"{m_max_val:.2f} kNm")
+            c_m3.metric("Max Deflection", f"{d_max_val:.2f} mm")
             
         # ================= TAB 2: CONCRETE DESIGN =================
         with tab2:
