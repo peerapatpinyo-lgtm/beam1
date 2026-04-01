@@ -1,3 +1,4 @@
+# reporter.py
 import streamlit as st
 import numpy as np
 
@@ -72,24 +73,41 @@ def render_calculation_report(res):
     st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
     st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
 
-    # 2.2 Minimum Reinforcement (ACI 9.6.1.2)
-    st.markdown("**2.2 Minimum Steel Check (Ref: ACI 9.6.1.2)**")
-    As = bot_n * (np.pi * (bot_db/2)**2)
-    As_min_1 = (0.25 * np.sqrt(fc) / fy) * b * d
-    As_min_2 = (1.4 / fy) * b * d
-    As_min = max(As_min_1, As_min_2)
+    # [NEW] 2.2 Step-by-Step Required Steel Calculation
+    st.markdown("**2.2 Required Reinforcement Calculation**")
+    Mu_calc = abs(Mu) * 1e6
+    phi_flex = 0.9
     
-    st.latex(rf"A_{{s,min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}} b_w d, \frac{{1.4}}{{f_y}} b_w d \right) = \mathbf{{{As_min:.1f}}}\text{{ mm}}^2")
-    if As >= As_min:
-        st.caption(f"✅ Provided As ({As:.1f} mm²) > Min As ({As_min:.1f} mm²)")
-    else:
-        st.error(f"❌ Provided As ({As:.1f} mm²) < Min As ({As_min:.1f} mm²)")
+    Rn = Mu_calc / (phi_flex * b * d**2) if d > 0 else 0
+    term_inside = 1 - (2 * Rn) / (0.85 * fc)
+    rho_req = (0.85 * fc / fy) * (1 - np.sqrt(term_inside)) if term_inside >= 0 else 0
+    
+    rho_min = max((0.25 * np.sqrt(fc) / fy), (1.4 / fy))
+    rho_max = (0.85 * fc * beta1 / fy) * (0.003 / (0.003 + 0.005))
+    
+    as_req_calc = rho_req * b * d
+    as_min_calc = rho_min * b * d
+    as_final_req = max(as_req_calc, as_min_calc)
 
-    # 2.3 Tension-Controlled & Ductility (ACI 21.2.2)
-    st.markdown("**2.3 Strain Compatibility & Strength Reduction ($\phi$)**")
+    st.latex(rf"R_n = \frac{{M_u}}{{\phi b d^2}} = \frac{{{Mu_calc:.0f}}}{{{phi_flex} \cdot {b} \cdot {d:.1f}^2}} = {Rn:.3f} \text{{ MPa}}")
+    st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = {rho_req:.5f}")
+    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = {rho_min:.5f}")
+    st.latex(rf"\rho_{{max}} = \left( \frac{{0.85 f'_c \beta_1}}{{f_y}} \right) \left( \frac{{0.003}}{{0.003 + 0.005}} \right) = {rho_max:.5f}")
     
+    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {as_req_calc:.1f} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {as_min_calc:.1f} \text{{ mm}}^2")
+    st.markdown(rf"**Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
+
+    # 2.3 Provided Steel & Section Capacity Check
+    st.markdown("**2.3 Section Capacity Verification**")
+    As = bot_n * (np.pi * (bot_db/2)**2)
+    
+    if As >= as_final_req:
+        st.caption(f"✅ Provided As ({As:.1f} mm²) > Required As ({as_final_req:.1f} mm²)")
+    else:
+        st.error(f"❌ Provided As ({As:.1f} mm²) < Required As ({as_final_req:.1f} mm²)")
+
     # Calculate a (Depth of equivalent rectangular stress block)
-    # Prevent division by zero if As is 0 (though unlikely in design result)
     if As > 0:
         a = (As * fy) / (0.85 * fc * b)
         c_neutral = a / beta1
@@ -122,14 +140,14 @@ def render_calculation_report(res):
     # 2.4 Nominal vs Factored Moment
     Mn = As * fy * (d - a/2) * 1e-6
     phiMn = phi_f * Mn
-    st.markdown("**2.4 Ultimate Strength Verification**")
+    st.markdown("**2.4 Ultimate Strength Limit State**")
     st.latex(rf"M_n = A_s f_y (d - a/2) = {As:.0f} \cdot {fy} \cdot ({d:.1f} - {a/2:.1f}) \cdot 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
     st.latex(rf"\phi M_n = {phi_f:.2f} \cdot {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
     
     if phiMn >= Mu:
-        st.success(rf"$\phi M_n ({phiMn:.2f}) \ge M_u ({Mu:.2f})$ — Capacity OK")
+        st.success(rf"✅ $\phi M_n ({phiMn:.2f} \text{{ kNm}}) \ge M_u ({Mu:.2f} \text{{ kNm}})$ — Capacity OK")
     else:
-        st.error(rf"$\phi M_n ({phiMn:.2f}) < M_u ({Mu:.2f})$ — INSUFFICIENT")
+        st.error(rf"❌ $\phi M_n ({phiMn:.2f} \text{{ kNm}}) < M_u ({Mu:.2f} \text{{ kNm}})$ — INSUFFICIENT")
 
     # =========================================================
     # 3. SHEAR CAPACITY AUDIT (ACI 22.5)
