@@ -323,15 +323,15 @@ else:
                         # ========================================================
                         # ประมวลผลลัพธ์ (ทำหลังจากรู้ค่าเหล็กบน, ล่าง, และปลอกทั้งหมดแล้ว)
                         # ========================================================
-                        
                         # ประมวลผล Top Steel (รับแรงดึง) / Bot Steel (รับแรงอัด)
                         d_t_val, as_prov_t, y_centroid_t = rc_design_engine.get_centroid_and_d(top_layers, h_mm, cover_mm, stir_db)
                         # ถ้าไม่มีเหล็ก ใส่ดักไว้กันพัง
                         d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + stir_db + 16/2)
 
+                        # 🛠️ แก้ไข: เปลี่ยน b, h, cover เป็น b_mm, h_mm, cover_mm
                         phi_Mn_t, *_ = rc_design_engine.get_phi_Mn_details_multi(
-                            bot_layers, top_layers, b, h, fc, fy, cover, stir_db, is_top_tension=True
-                            )
+                            bot_layers, top_layers, b_mm, h_mm, fc, fy, cover_mm, stir_db, is_top_tension=True
+                        )
                         # ใส่ผลลัพธ์กลับเข้าไปในพื้นที่ที่จองไว้
                         top_res_ph.caption(f"**Check Top:** Prov As: {as_prov_t:.0f} mm² | Cap: {phi_Mn_t:.1f} kNm {'✅' if phi_Mn_t >= mu_neg else '❌ (Need More)'}")
 
@@ -340,12 +340,13 @@ else:
                         d_b_val, as_prov_b, y_centroid_b = rc_design_engine.get_centroid_and_d(bot_layers, h_mm, cover_mm, stir_db)
                         d_b = h_mm - y_centroid_b if y_centroid_b > 0 else h_mm - (cover_mm + stir_db + 16/2)
                         
-                        phi_Mn_b, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(
+                        # 🛠️ แก้ไข: เปลี่ยนการรับตัวแปรด้านหน้าเป็น *_ เพื่อกัน Error เดิมเกิดซ้ำ
+                        phi_Mn_b, *_ = rc_design_engine.get_phi_Mn_details_multi(
                             bot_layers, top_layers, b_mm, h_mm, fc, fy, cover_mm, stir_db
                         )
                         # ใส่ผลลัพธ์กลับเข้าไปในพื้นที่ที่จองไว้
                         bot_res_ph.caption(f"**Check Bot:** Prov As: {as_prov_b:.0f} mm² | Cap: {phi_Mn_b:.1f} kNm {'✅' if phi_Mn_b >= mu_pos else '❌ (Need More)'}")
-
+                        
 
                         # ประมวลผล Shear
                         status_v, phi_Vn, _, _, _, _ = rc_design_engine.check_shear_details(vu_max, b_mm, d_b, fc, fy, stir_db, stir_s)
