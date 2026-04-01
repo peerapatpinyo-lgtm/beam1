@@ -7,7 +7,6 @@ def render_calculation_report(res):
     Includes Clause References, Substitutions, Limit States, and Crack Width Control.
     """
     # --- Data Extraction ---
-    # ใช้ .get() เพื่อป้องกัน Error กรณี key ไม่ครบ
     idx = res.get('span_id', 0) + 1
     L_m = res.get('L', 0)
     b = res.get('b', 200) 
@@ -42,38 +41,38 @@ def render_calculation_report(res):
     else:
         beta1 = 0.85 - (0.05 * (fc - 28) / 7)
 
-    st.markdown(f"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
-    st.markdown(f"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
+    st.markdown(rf"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
+    st.markdown(rf"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
     st.divider()
 
     # =========================================================
-    # 1. MATERIAL & SECTION PROPERTIES (ACI 19.2 & 20.2)
+    # 1. MATERIAL & SECTION PROPERTIES
     # =========================================================
     st.markdown("### 1. Materials & Geometry (Ref: ACI 19.2 & 20.2)")
     c1, c2 = st.columns(2)
     with c1:
         st.write("**Concrete Strength Properties:**")
         st.latex(rf"f'_c = {fc} \text{{ MPa}}")
-        st.latex(rf"E_c = 4700\sqrt{{f'_c}} = {Ec:.0f} \text{{ MPa}}")
+        st.latex(rf"E_c = 4700\sqrt{{f'_c}} = 4700\sqrt{{{fc}}} = {Ec:.0f} \text{{ MPa}}")
         st.latex(rf"\beta_1 = {beta1:.3f} \quad \text{{(ACI 22.2.2.4.3)}}")
     with c2:
         st.write("**Steel Reinforcement:**")
         st.latex(rf"f_y = {fy} \text{{ MPa}}, \quad E_s = 200,000 \text{{ MPa}}")
-        st.latex(rf"\text{{Section: }} {b:.0f} \times {h:.0f} \text{{ mm}}")
+        st.latex(rf"\text{{Section (b} \times \text{{h): }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     # =========================================================
-    # 2. FLEXURAL CAPACITY AUDIT (ACI 22.2)
+    # 2. FLEXURAL CAPACITY AUDIT
     # =========================================================
     st.markdown("### 2. Flexural Strength Audit (Ref: ACI 22.2)")
     
-    # 2.1 Effective Depth (d)
+    # --- 2.1 Effective Depth (d) ---
     d = h - cov - stir_db - (bot_db/2)
-    st.markdown("**2.1 Effective Depth Calculation**")
+    st.markdown("**2.1 Effective Depth Calculation ($d$)**")
     st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
     st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
 
-    # [NEW] 2.2 Step-by-Step Required Steel Calculation
-    st.markdown("**2.2 Required Reinforcement Calculation**")
+    # --- 2.2 Required Steel Calculation ---
+    st.markdown("**2.2 Required Reinforcement ($A_{s,req}$)**")
     Mu_calc = abs(Mu) * 1e6
     phi_flex = 0.9
     
@@ -88,39 +87,38 @@ def render_calculation_report(res):
     as_min_calc = rho_min * b * d
     as_final_req = max(as_req_calc, as_min_calc)
 
-    st.latex(rf"R_n = \frac{{M_u}}{{\phi b d^2}} = \frac{{{Mu_calc:.0f}}}{{{phi_flex} \cdot {b} \cdot {d:.1f}^2}} = {Rn:.3f} \text{{ MPa}}")
-    st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = {rho_req:.5f}")
-    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = {rho_min:.5f}")
-    st.latex(rf"\rho_{{max}} = \left( \frac{{0.85 f'_c \beta_1}}{{f_y}} \right) \left( \frac{{0.003}}{{0.003 + 0.005}} \right) = {rho_max:.5f}")
+    st.latex(rf"R_n = \frac{{M_u \times 10^6}}{{\phi b d^2}} = \frac{{{abs(Mu):.2f} \times 10^6}}{{{phi_flex} \cdot {b} \cdot ({d:.1f})^2}} = {Rn:.3f} \text{{ MPa}}")
+    st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = {rho_req:.5f}")
+    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = \max \left( \frac{{0.25\sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}} \right) = {rho_min:.5f}")
+    st.latex(rf"\rho_{{max}} = \left( \frac{{0.85 f'_c \beta_1}}{{f_y}} \right) \left( \frac{{0.003}}{{0.003 + 0.005}} \right) = \left( \frac{{0.85({fc})({beta1:.3f})}}{{{fy}}} \right) (0.375) = {rho_max:.5f}")
     
-    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {as_req_calc:.1f} \text{{ mm}}^2")
-    st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {as_min_calc:.1f} \text{{ mm}}^2")
-    st.markdown(rf"**Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
+    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {rho_req:.5f} \cdot {b} \cdot {d:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {rho_min:.5f} \cdot {b} \cdot {d:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
+    st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
 
-    # 2.3 Provided Steel & Section Capacity Check
-    st.markdown("**2.3 Section Capacity Verification**")
-    As = bot_n * (np.pi * (bot_db/2)**2)
+    # --- 2.3 Provided Steel Calculation ---
+    st.markdown("**2.3 Provided Reinforcement ($A_{s,prov}$)**")
+    As = bot_n * (np.pi * (bot_db**2) / 4)
+    st.latex(rf"A_{{s,prov}} = n \times \frac{{\pi d_b^2}}{{4}} = {bot_n} \times \frac{{\pi ({bot_db})^2}}{{4}} = \mathbf{{{As:.1f}}} \text{{ mm}}^2")
     
     if As >= as_final_req:
-        st.caption(f"✅ Provided As ({As:.1f} mm²) > Required As ({as_final_req:.1f} mm²)")
+        st.success(rf"✅ Check: Provided $A_s$ ({As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
     else:
-        st.error(f"❌ Provided As ({As:.1f} mm²) < Required As ({as_final_req:.1f} mm²)")
+        st.error(rf"❌ Check: Provided $A_s$ ({As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
 
-    # Calculate a (Depth of equivalent rectangular stress block)
+    # --- 2.4 Section Capacity & Strain Check ---
+    st.markdown("**2.4 Stress Block & Ductility Check**")
     if As > 0:
         a = (As * fy) / (0.85 * fc * b)
         c_neutral = a / beta1
     else:
-        a = 0
-        c_neutral = 0
+        a = 0; c_neutral = 0
 
-    # Calculate Strain
     if c_neutral > 0:
         epsilon_t = 0.003 * (d - c_neutral) / c_neutral
     else:
-        epsilon_t = 999 # Infinite ductility implies no compression block
+        epsilon_t = 999 
 
-    # Determine Phi (Table 21.2.2)
     if epsilon_t >= 0.005:
         phi_f = 0.90
         state = "Tension-Controlled (Ductile)"
@@ -132,54 +130,59 @@ def render_calculation_report(res):
         state = "Transition Zone"
 
     st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{As:.1f} \cdot {fy}}}{{0.85 \cdot {fc} \cdot {b}}} = {a:.2f}\text{{ mm}}")
-    st.latex(rf"c = a/\beta_1 = {a:.2f}/{beta1:.3f} = {c_neutral:.2f}\text{{ mm}}")
-    st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d - c}}{{c}} \right) = \mathbf{{{epsilon_t:.5f}}}")
-    
-    # [FIXED] rf"..." ใช้เพื่อป้องกันการแปลผลผิดของ \phi
-    st.info(rf"**Result:** {state} | $\phi = {phi_f:.3f}$")
+    st.latex(rf"c = \frac{{a}}{{\beta_1}} = \frac{{{a:.2f}}}{{{beta1:.3f}}} = {c_neutral:.2f}\text{{ mm}}")
+    st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d - c}}{{c}} \right) = 0.003 \left( \frac{{{d:.1f} - {c_neutral:.2f}}}{{{c_neutral:.2f}}} \right) = \mathbf{{{epsilon_t:.5f}}}")
+    st.info(rf"**Result:** {state} | Strength Reduction Factor ($\phi$) = **{phi_f:.3f}**")
 
-    # 2.4 Nominal vs Factored Moment
+    # --- 2.5 Ultimate Strength Limit State ---
     Mn = As * fy * (d - a/2) * 1e-6
     phiMn = phi_f * Mn
-    st.markdown("**2.4 Ultimate Strength Limit State**")
-    st.latex(rf"M_n = A_s f_y (d - a/2) = {As:.0f} \cdot {fy} \cdot ({d:.1f} - {a/2:.1f}) \cdot 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
-    st.latex(rf"\phi M_n = {phi_f:.2f} \cdot {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
+    st.markdown("**2.5 Ultimate Flexural Capacity ($\phi M_n$)**")
+    st.latex(rf"M_n = A_s f_y \left(d - \frac{{a}}{{2}}\right) \times 10^{{-6}} = {As:.1f} \cdot {fy} \cdot \left({d:.1f} - \frac{{{a:.2f}}}{{2}}\right) \times 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
+    st.latex(rf"\phi M_n = {phi_f:.3f} \times {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
     
-    if phiMn >= Mu:
-        st.success(rf"✅ $\phi M_n ({phiMn:.2f} \text{{ kNm}}) \ge M_u ({Mu:.2f} \text{{ kNm}})$ — Capacity OK")
+    if phiMn >= abs(Mu):
+        st.success(rf"✅ Capacity OK: $\phi M_n$ ({phiMn:.2f} kNm) $\ge M_u$ ({abs(Mu):.2f} kNm)")
     else:
-        st.error(rf"❌ $\phi M_n ({phiMn:.2f} \text{{ kNm}}) < M_u ({Mu:.2f} \text{{ kNm}})$ — INSUFFICIENT")
+        st.error(rf"❌ INSUFFICIENT: $\phi M_n$ ({phiMn:.2f} kNm) $< M_u$ ({abs(Mu):.2f} kNm)")
 
     # =========================================================
-    # 3. SHEAR CAPACITY AUDIT (ACI 22.5)
+    # 3. SHEAR CAPACITY AUDIT
     # =========================================================
     st.divider()
     st.markdown("### 3. Shear Strength Audit (Ref: ACI 22.5)")
-    st.latex(rf"V_u = {Vu:.2f}\text{{ kN}}")
+    st.latex(rf"\text{{Factored Shear Force, }} V_u = {abs(Vu):.2f}\text{{ kN}}")
     
     Vc = (0.17 * 1.0 * np.sqrt(fc) * b * d) / 1000
-    Av = 2 * (np.pi * (stir_db/2)**2) 
+    Av = 2 * (np.pi * (stir_db**2) / 4) 
+    
+    st.latex(rf"A_v = 2 \times \frac{{\pi d_b^2}}{{4}} = 2 \times \frac{{\pi ({stir_db})^2}}{{4}} = {Av:.1f} \text{{ mm}}^2 \quad \text{{(2 legs)}}")
+    st.latex(rf"V_c = 0.17 \lambda \sqrt{{f'_c}} b_w d = \frac{{0.17(1.0)\sqrt{{{fc}}}({b})({d:.1f})}}{{1000}} = {Vc:.2f}\text{{ kN}}")
     
     if stir_s > 0:
         Vs = (Av * fy * d / stir_s) / 1000
+        st.latex(rf"V_s = \frac{{A_v f_{{yt}} d}}{{s}} = \frac{{{Av:.1f} \cdot {fy} \cdot {d:.1f}}}{{{stir_s} \cdot 1000}} = {Vs:.2f}\text{{ kN}}")
     else:
         Vs = 0
+        st.latex(r"V_s = 0 \text{ kN (No shear reinforcement provided)}")
         
     phiVn = 0.75 * (Vc + Vs)
-
-    st.latex(rf"V_c = 0.17 \lambda \sqrt{{f'_c}} b_w d = {Vc:.2f}\text{{ kN}}")
-    st.latex(rf"V_s = \frac{{A_v f_{{yt}} d}}{{s}} = {Vs:.2f}\text{{ kN}}")
-    st.latex(rf"\phi V_n = 0.75(V_c + V_s) = \mathbf{{{phiVn:.2f}}}\text{{ kN}}")
+    st.latex(rf"\phi V_n = 0.75(V_c + V_s) = 0.75({Vc:.2f} + {Vs:.2f}) = \mathbf{{{phiVn:.2f}}}\text{{ kN}}")
     
-    s_max = min(d/2, 600)
-    st.markdown(rf"**ACI Spacing Limit:** $s_{{max}} = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
-    if stir_s <= s_max:
-        st.caption(f"✅ Spacing OK ({stir_s} mm)")
+    if phiVn >= abs(Vu):
+        st.success(rf"✅ Shear Capacity OK: $\phi V_n$ ({phiVn:.2f} kN) $\ge V_u$ ({abs(Vu):.2f} kN)")
     else:
-        st.error(f"❌ Spacing exceeds limit ({s_max:.0f} mm)")
+        st.error(rf"❌ Shear INSUFFICIENT: $\phi V_n$ ({phiVn:.2f} kN) $< V_u$ ({abs(Vu):.2f} kN)")
+
+    s_max = min(d/2, 600)
+    st.markdown(rf"**ACI Maximum Spacing Limit ($s_{{max}}$):** $\min(d/2, 600) = \min({d:.1f}/2, 600) = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
+    if stir_s <= s_max:
+        st.caption(rf"✅ Spacing OK: Provided $s$ ({stir_s} mm) $\le s_{{max}}$ ({s_max:.0f} mm)")
+    else:
+        st.error(rf"❌ Spacing Warning: Provided $s$ ({stir_s} mm) $> s_{{max}}$ ({s_max:.0f} mm)")
 
     # =========================================================
-    # 4. SERVICEABILITY AUDIT (ACI 24.2 & Gergely-Lutz)
+    # 4. SERVICEABILITY AUDIT
     # =========================================================
     st.divider()
     st.markdown("### 4. Serviceability Audit (Ref: ACI 24.2)")
@@ -189,16 +192,16 @@ def render_calculation_report(res):
     L_mm = L_m * 1000
     allowable_def = L_mm / 240
     
-    st.write(f"**Limit:** Instantaneous Deflection (L/240):")
-    st.latex(rf"\Delta_{{allow}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
+    st.write("**Instantaneous Deflection Limit (L/240):**")
+    st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{240}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
     st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
 
     if abs(delta_svc) <= allowable_def:
-        st.success("✅ Deflection: PASS")
+        st.success(rf"✅ Deflection PASS: $\Delta_{{actual}} \le \Delta_{{allow}}$")
     else:
-        st.warning("⚠️ Deflection: FAIL (Increase section stiffness)")
+        st.warning(rf"⚠️ Deflection FAIL: $\Delta_{{actual}} > \Delta_{{allow}}$ (Increase section stiffness)")
 
-    # --- 4.2 Crack Width (Gergely-Lutz) ---
+    # --- 4.2 Crack Width ---
     st.markdown("#### 4.2 Crack Width Control (Gergely-Lutz)")
     
     if 'crack' in res:
@@ -207,31 +210,21 @@ def render_calculation_report(res):
         w_lim = crack_data.get('limit', 0.4)
         status = crack_data.get('status', 'N/A')
         
-        st.markdown("Based on Gergely-Lutz equation (Modified for SI):")
-        st.latex(r"w = 0.076 \beta f_s \sqrt[3]{d_c A}")
+        fs = fy * 0.6 # Approximation for service steel stress
+        A_eff = (2 * cov * b) / bot_n if bot_n > 0 else 0
         
-        c_cr1, c_cr2 = st.columns(2)
-        with c_cr1:
-            st.markdown(f"""
-            **Parameters:**
-            - Service Moment ($M_s$): {Ma:.2f} kNm
-            - Cover ($d_c$): {cov} mm
-            - Steel ($f_y$): {fy} MPa
-            """)
-        with c_cr2:
-            st.markdown(f"""
-            **Results:**
-            - Calculated Width ($w$): **{w_val:.3f} mm**
-            - Limit: {w_lim} mm
-            - Status: **{status}**
-            """)
+        st.markdown("Based on Gergely-Lutz equation (Modified for SI):")
+        st.latex(rf"w = 0.076 \beta f_s \sqrt[3]{{d_c A}}")
+        st.latex(rf"w \approx 0.076 (1.2) ({fs:.0f}) \sqrt[3]{{{cov} \times {A_eff:.1f}}} \times 10^{{-3}} = \mathbf{{{w_val:.3f}}}\text{{ mm}}")
+        
+        st.markdown(rf"**Limit Check:** $w_{{limit}} = {w_lim} \text{{ mm}}$")
             
         if w_val > w_lim:
-             st.error(f"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
+             st.error(rf"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
         else:
-             st.success(f"✅ Crack width control passed.")
+             st.success(rf"✅ Crack width control passed ({w_val:.3f} mm $\le$ {w_lim} mm).")
     else:
-        st.info("Crack width analysis not available for this run.")
+        st.info("Crack width analysis data not available for this run.")
 
     st.divider()
     st.caption("Generated by Pro RC Beam Design Software | ACI 318-19 Compliant")
