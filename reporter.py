@@ -41,8 +41,8 @@ def render_calculation_report(res):
     else:
         beta1 = 0.85 - (0.05 * (fc - 28) / 7)
 
-    st.markdown(f"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
-    st.markdown(f"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
+    st.markdown(rf"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
+    st.markdown(rf"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
     st.divider()
 
     # =========================================================
@@ -58,7 +58,7 @@ def render_calculation_report(res):
     with c2:
         st.write("**Steel Reinforcement:**")
         st.latex(rf"f_y = {fy} \text{{ MPa (N/mm}^2\text{{)}}")
-        st.latex(rf"E_s = 200,000 \text{{ MPa}}")
+        st.latex(r"E_s = 200,000 \text{ MPa}")
         st.latex(rf"\text{{Section: }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     # =========================================================
@@ -69,13 +69,13 @@ def render_calculation_report(res):
     # 2.1 Effective Depth (d)
     d = h - cov - stir_db - (bot_db/2)
     st.markdown("**2.1 Effective Depth Calculation**")
-    st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
+    st.latex(r"d = h - c_{clear} - \text{db}_{stirrup} - \frac{\text{db}_{bar}}{2}")
     st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
 
     # 2.2 Step-by-Step Required Steel Calculation
-    st.markdown("**2.2 Required Reinforcement Calculation ($A_{s,req}$)**")
+    st.markdown(r"**2.2 Required Reinforcement Calculation ($A_{s,req}$)**")
     
-    st.info("💡 **ข้อสังเกตเรื่องการแปลงหน่วย (Unit Conversion):**\n"
+    st.info("💡 **ข้อสังเกตเรื่องการแปลงหน่วย (Unit Conversion):**\n\n"
             "* โมเมนต์ประลัย ($M_u$) เดิมมีหน่วยเป็น $kN \cdot m$ จำเป็นต้องแปลงเป็น $N \cdot mm$ โดยการคูณ $10^6$\n"
             "* สาเหตุเพื่อให้สอดคล้องกับ $f'_c$ และ $f_y$ ที่มีหน่วยเป็น $MPa$ ($N/mm^2$) และมิติหน้าตัดคาน $b, d$ ที่เป็น $mm$ เพื่อให้หน่วยตัดกันได้พอดี")
 
@@ -94,22 +94,22 @@ def render_calculation_report(res):
     as_min_calc = rho_min * b * d
     as_final_req = max(as_req_calc, as_min_calc)
 
-    st.markdown("**Step A: หาค่า $R_n$ (Coefficient of Resistance)**")
+    st.markdown(r"**Step A: หาค่า $R_n$ (Coefficient of Resistance)**")
     st.latex(r"R_n = \frac{M_u \times 10^6}{\phi b d^2}")
     st.latex(rf"R_n = \frac{{{Mu_abs:.2f} \times 10^6}}{{{phi_flex} \cdot {b} \cdot {d:.1f}^2}} = \mathbf{{{Rn:.3f}}} \text{{ MPa}}")
 
-    st.markdown("**Step B: หาค่าอัตราส่วนเหล็กเสริมที่ต้องการ ($\rho_{req}$)**")
+    st.markdown(r"**Step B: หาค่าอัตราส่วนเหล็กเสริมที่ต้องการ ($\rho_{req}$)**")
     st.latex(r"\rho_{req} = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
     st.latex(rf"\rho_{{req}} = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = \mathbf{{{rho_req:.5f}}}")
 
-    st.markdown("**Step C: ตรวจสอบปริมาณเหล็กเสริมต่ำสุดและสูงสุด ($\rho_{min}, \rho_{max}$)**")
+    st.markdown(r"**Step C: ตรวจสอบปริมาณเหล็กเสริมต่ำสุดและสูงสุด ($\rho_{min}, \rho_{max}$)**")
     st.latex(r"\rho_{min} = \max \left( \frac{0.25\sqrt{f'_c}}{f_y}, \frac{1.4}{f_y} \right)")
     st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}} \right) = \mathbf{{{rho_min:.5f}}}")
     
     st.latex(r"\rho_{max} = \left( \frac{0.85 f'_c \beta_1}{f_y} \right) \left( \frac{0.003}{0.003 + 0.005} \right)")
     st.latex(rf"\rho_{{max}} = \left( \frac{{0.85({fc})({beta1:.3f})}}{{{fy}}} \right) \left( \frac{{0.003}}{{0.008}} \right) = \mathbf{{{rho_max:.5f}}}")
 
-    st.markdown("**Step D: สรุปพื้นที่เหล็กเสริมที่ต้องการ ($A_{s,req}$)**")
+    st.markdown(r"**Step D: สรุปพื้นที่เหล็กเสริมที่ต้องการ ($A_{s,req}$)**")
     st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {rho_req:.5f} \cdot {b} \cdot {d:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
     st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {rho_min:.5f} \cdot {b} \cdot {d:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
     st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
@@ -119,9 +119,9 @@ def render_calculation_report(res):
     As = bot_n * (np.pi * (bot_db/2)**2)
     
     if As >= as_final_req:
-        st.caption(f"✅ Provided As ({As:.1f} mm²) > Required As ({as_final_req:.1f} mm²)")
+        st.caption(rf"✅ Provided As ({As:.1f} mm²) > Required As ({as_final_req:.1f} mm²)")
     else:
-        st.error(f"❌ Provided As ({As:.1f} mm²) < Required As ({as_final_req:.1f} mm²)")
+        st.error(rf"❌ Provided As ({As:.1f} mm²) < Required As ({as_final_req:.1f} mm²)")
 
     if As > 0:
         a = (As * fy) / (0.85 * fc * b)
@@ -148,7 +148,9 @@ def render_calculation_report(res):
     st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{As:.1f} \cdot {fy}}}{{0.85 \cdot {fc} \cdot {b}}} = {a:.2f}\text{{ mm}}")
     st.latex(rf"c = a/\beta_1 = {a:.2f}/{beta1:.3f} = {c_neutral:.2f}\text{{ mm}}")
     st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d - c}}{{c}} \right) = \mathbf{{{epsilon_t:.5f}}}")
-    st.info(f"**Result:** {state} | $\phi = {phi_f:.3f}$")
+    
+    # [FIXED] Changed f"..." to rf"..." here to prevent Python escape sequence errors on \phi
+    st.info(rf"**Result:** {state} | $\phi = {phi_f:.3f}$")
 
     # 2.4 Nominal vs Factored Moment
     Mn = As * fy * (d - a/2) * 1e-6
@@ -186,9 +188,9 @@ def render_calculation_report(res):
     s_max = min(d/2, 600)
     st.markdown(rf"**ACI Spacing Limit:** $s_{{max}} = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
     if stir_s <= s_max:
-        st.caption(f"✅ Spacing OK ({stir_s} mm)")
+        st.caption(rf"✅ Spacing OK ({stir_s} mm)")
     else:
-        st.error(f"❌ Spacing exceeds limit ({s_max:.0f} mm)")
+        st.error(rf"❌ Spacing exceeds limit ({s_max:.0f} mm)")
 
     # =========================================================
     # 4. SERVICEABILITY AUDIT
@@ -201,7 +203,7 @@ def render_calculation_report(res):
     L_mm = L_m * 1000
     allowable_def = L_mm / 240
     
-    st.write(f"**Limit:** Instantaneous Deflection (L/240):")
+    st.write("**Limit:** Instantaneous Deflection (L/240):")
     st.latex(rf"\Delta_{{allow}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
     st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
 
@@ -224,14 +226,14 @@ def render_calculation_report(res):
         
         c_cr1, c_cr2 = st.columns(2)
         with c_cr1:
-            st.markdown(f"""
+            st.markdown(rf"""
             **Parameters:**
             - Service Moment ($M_s$): {Ma:.2f} kNm
             - Cover ($d_c$): {cov} mm
             - Steel ($f_y$): {fy} MPa
             """)
         with c_cr2:
-            st.markdown(f"""
+            st.markdown(rf"""
             **Results:**
             - Calculated Width ($w$): **{w_val:.3f} mm**
             - Limit: {w_lim} mm
@@ -239,9 +241,9 @@ def render_calculation_report(res):
             """)
             
         if w_val > w_lim:
-            st.error(f"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
+            st.error(rf"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
         else:
-            st.success(f"✅ Crack width control passed.")
+            st.success("✅ Crack width control passed.")
     else:
         st.info("Crack width analysis not available for this run.")
 
