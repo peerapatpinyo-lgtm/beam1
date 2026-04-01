@@ -58,7 +58,8 @@ def render_calculation_report(res):
     with c2:
         st.write("**Steel Reinforcement:**")
         st.latex(rf"f_y = {fy} \text{{ MPa}}, \quad E_s = 200,000 \text{{ MPa}}")
-        st.latex(rf"\text{{Section (b} \times \text{{h): }} {b:.0f} \times {h:.0f} \text{{ mm}}")
+        # FIXED SYNTAX ERROR HERE (Escaped braces correctly)
+        st.latex(rf"\text{{Section (b }} \times \text{{ h): }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     # =========================================================
     # 2. FLEXURAL CAPACITY AUDIT
