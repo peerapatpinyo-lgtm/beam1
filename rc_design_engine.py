@@ -40,7 +40,6 @@ def get_centroid_and_d(layers, h, cover, stir_db):
 def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     """
     Calculate Required Steel Area based on ACI 318
-    (เพิ่มการ Return `details` เพื่อนำไปแสดงรายการคำนวณ)
     """
     if Mu_kNm == 0 or d_eff_mm <= 0: 
         return 0.0, 0.0, False, {}
@@ -80,35 +79,120 @@ def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     
     return float(as_final), float(rho), False, details
 
-def get_phi_Mn_details_multi(layers, d_eff, b, h, fc, fy):
+def get_phi_Mn_details_multi(bot_layers, top_layers, b, h, fc, fy, cover, stir_db):
     """
-    Calculate Moment Capacity (Phi Mn) สำหรับเหล็กหลายชั้น
+    [UPGRADED] คำนวณ Moment Capacity (Phi Mn) เชิงลึก 
+    รองรับ: เหล็กหลายชั้น (Multiple Layers), คานเสริมเหล็กคู่ (Doubly Reinforced), 
+    ตรวจสอบการครากเหล็กอัด (Yield Check) และใช้ dt ในการหาค่า Phi
     """
-    Ast = sum([l['n'] * (np.pi * (l['db']/2)**2) for l in layers])
-    
-    if Ast == 0 or d_eff <= 0: 
-        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-    
-    a = (Ast * fy) / (0.85 * fc * b)
+    Es = 200000.0
+    eps_cu = 0.003
+    eps_y = fy / Es
     beta1 = get_beta1(fc)
-    c = a / beta1
+
+    # 1. คำนวณฝั่งเหล็กรับแรงดึง (Tension Steel)
+    As = 0.0
+    sum_ay_bot = 0.0
+    current_y_bot = cover + stir_db
+    dt = 0.0 # ความลึกเหล็กชั้นนอกสุด
     
-    if a >= d_eff: 
-        return 0.0, float(Ast), float(a), 0.0, float(c), -1.0 
+    for i, layer in enumerate(bot_layers):
+        n = layer.get('n', 0)
+        db = layer.get('db', 0)
+        if n <= 0: continue
+        
+        area = n * (np.pi * (db/2)**2)
+        y_center = current_y_bot + (db/2)
+        
+        if i == 0:
+            dt = h - y_center # เหล็กชั้นล่างสุด (ไกลสุดจากขอบบน)
+            
+        As += area
+        sum_ay_bot += (area * y_center)
+        current_y_bot += db + 25.0 
 
-    strain_t = 0.003 * (d_eff - c) / c if c > 0 else 999.0 
+    if As == 0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-    if strain_t >= 0.005:
+    y_bar_bot = sum_ay_bot / As
+    d = h - y_bar_bot 
+
+    # 2. คำนวณฝั่งเหล็กรับแรงอัด (Compression Steel)
+    As_prime = 0.0
+    sum_ay_top = 0.0
+    current_y_top = cover + stir_db
+    
+    if top_layers:
+        for layer in top_layers:
+            n = layer.get('n', 0)
+            db = layer.get('db', 0)
+            if n <= 0: continue
+            
+            area = n * (np.pi * (db/2)**2)
+            y_center = current_y_top + (db/2)
+            
+            As_prime += area
+            sum_ay_top += (area * y_center)
+            current_y_top += db + 25.0
+
+    d_prime = sum_ay_top / As_prime if As_prime > 0 else 0.0
+
+    # 3. คำนวณแกนสะเทิน (c) และตรวจสอบการคราก
+    if As_prime == 0:
+        a = (As * fy) / (0.85 * fc * b)
+        c = a / beta1
+        fs_prime = 0.0
+    else:
+        a_assume = ((As - As_prime) * fy) / (0.85 * fc * b)
+        if a_assume <= 0: a_assume = 0.001 
+        
+        c_assume = a_assume / beta1
+        eps_s_prime = eps_cu * (c_assume - d_prime) / c_assume if c_assume > 0 else 0
+
+        if eps_s_prime >= eps_y:
+            c = c_assume
+            a = a_assume
+            fs_prime = fy
+        else:
+            A_quad = 0.85 * fc * beta1 * b
+            B_quad = eps_cu * Es * As_prime - As * fy
+            C_quad = -eps_cu * Es * As_prime * d_prime
+            
+            discriminant = B_quad**2 - 4 * A_quad * C_quad
+            
+            if discriminant >= 0:
+                c = (-B_quad + np.sqrt(discriminant)) / (2 * A_quad)
+            else:
+                c = 0.001
+                
+            a = beta1 * c
+            fs_prime = Es * eps_cu * (c - d_prime) / c if c > 0 else 0.0
+
+    if c <= 0:
+        return 0.0, float(As), 0.0, 0.0, 0.0, 0.0
+
+    # 4. คำนวณกำลังต้านทานโมเมนต์ (Mn)
+    Cc = 0.85 * fc * a * b
+    Cs = As_prime * fs_prime
+    
+    Mn_Nmm = Cc * (d - a/2) + Cs * (d - d_prime)
+    Mn_kNm = Mn_Nmm / 1e6
+
+    # 5. หาตัวคูณลดกำลัง Phi (โดยใช้ dt ของชั้นนอกสุด)
+    if dt == 0: dt = d 
+    
+    eps_t = eps_cu * (dt - c) / c if c > 0 else 999.0
+
+    if eps_t >= 0.005:
         phi = 0.90
-    elif strain_t <= 0.002:
+    elif eps_t <= 0.002:
         phi = 0.65
     else:
-        phi = 0.65 + 0.25 * ((strain_t - 0.002) / 0.003)
+        phi = 0.65 + 0.25 * ((eps_t - 0.002) / 0.003)
 
-    Mn = Ast * fy * (d_eff - a/2)
-    phi_Mn = phi * Mn / 1e6 
-    
-    return float(phi_Mn), float(Ast), float(a), float(Mn), float(c), float(strain_t)
+    phi_Mn = phi * Mn_kNm
+
+    return float(phi_Mn), float(As), float(a), float(Mn_kNm), float(c), float(eps_t)
 
 def check_shear_details(Vu_kN, b, d, fc, fy, stir_db, spacing):
     """
@@ -160,10 +244,6 @@ def check_serviceability(Ma_kNm, delta_elastic_mm, b, h, d_eff, Ast_bot, Ast_top
     Mcr = (fr * Ig) / yt
     
     # 3. Calculate Cracked Inertia (Icr) using Transformed Section
-    # หาตำแหน่งแกนสะเทิน (x) จากสมการกำลังสอง: (b/2)x^2 + nAs'(x-d') - nAs(d-x) = 0
-    # เพื่อความง่าย (Simplify) เราจะคิดเฉพาะเหล็กรับแรงดึง (Singly Reinforced) สำหรับ Icr
-    # เพราะผลของเหล็กรับแรงอัดต่อ Icr มีน้อย แต่มีผลมากต่อ Long-term multiplier
-    
     rho = Ast_bot / (b * d_eff)
     k = np.sqrt(2*rho*n + (rho*n)**2) - (rho*n)
     kd = k * d_eff
@@ -171,45 +251,28 @@ def check_serviceability(Ma_kNm, delta_elastic_mm, b, h, d_eff, Ast_bot, Ast_top
     Icr = (b * kd**3) / 3 + n * Ast_bot * (d_eff - kd)**2
     
     # 4. Calculate Effective Inertia (Ie) - ACI 318-19 (Bischoff's Formula) Eq. 24.2.3.5b
-    # ถ้า Ma <= (2/3)Mcr ให้ใช้ Ig
-    # ถ้า Ma > (2/3)Mcr ให้ใช้สูตร Bischoff
-    
     limit_Mcr = (2/3) * Mcr
     
     if Ma <= limit_Mcr:
         Ie = Ig
     else:
-        # Bischoff's Formula
         term = (limit_Mcr / Ma)**2
         denom = 1 - term * (1 - (Icr / Ig))
         Ie = Icr / denom
         
-    # Limit Ie must not exceed Ig
     Ie = min(Ie, Ig)
     
     # 5. Calculate Immediate Deflection (Adjusted for Stiffness)
-    # delta_elastic มาจาก Solver ที่ใช้ Stiffness E*I (โดยที่ I อาจจะเป็น Ig)
-    # เราต้องปรับสัดส่วน: delta_real = delta_elastic * (Ig / Ie)
-    # สมมติว่า Solver ใช้ Ig ในการคำนวณ (ซึ่งเป็นปกติของ Simple Solver)
-    
     delta_immediate = delta_elastic_mm * (Ig / Ie)
     
     # 6. Long-term Deflection Multiplier (ACI Table 24.2.4.1.3)
-    # Lambda = Xi / (1 + 50*rho')
-    # Xi = 2.0 (for duration > 5 years)
-    
     xi = 2.0
-    # rho' = Ast_top / (b * d) -> Compression steel at mid-span
     rho_prime = Ast_top / (b * d_eff) if d_eff > 0 else 0
-    
     lambda_delta = xi / (1 + 50 * rho_prime)
     
     delta_longterm = delta_immediate + (lambda_delta * delta_immediate)
     
     return float(delta_immediate), float(delta_longterm), float(Ie), float(Icr), float(lambda_delta)
-
-
-# rc_design_engine.py (ส่วนเพิ่มเติม)
 
 def check_crack_width(Ma_svc, b, h, d, As, n_bars, fc, Es=200000):
     """
@@ -227,44 +290,30 @@ def check_crack_width(Ma_svc, b, h, d, As, n_bars, fc, Es=200000):
     j = 1 - k/3
     
     # 2. Calculate Steel Stress (fs) at Service Load
-    # fs = M / (As * j * d)
     fs = (Ma_svc * 1e6) / (As * j * d) # MPa
     
     # 3. Geometric Parameters for Gergely-Lutz
-    # x = Neutral axis depth
     x = k * d
     
-    # dc = Distance from tension face to center of closest bar
-    # Approximation: h - d is the distance from centroid of steel to bottom
     dc = h - d 
     if dc < 0: dc = 40 # Fallback
     
-    # beta = Ratio of distance (Neutral axis to Tension Face) / (Neutral axis to Steel Centroid)
     beta = (h - x) / (d - x)
-    
-    # A = Effective tension area of concrete surrounding the flexural tension reinforcement
-    # divided by the number of bars.
-    # Effective tension area = 2 * dc * b
     A_eff = (2 * dc * b) / n_bars
     
     # 4. Calculation (Convert to Imperial for Formula, then back to mm)
-    # Why? Gergely-Lutz coefficients are empirically derived in Imperial units.
-    
     fs_ksi = fs / 6.895        # MPa -> ksi
     dc_in = dc / 25.4          # mm -> inch
     A_in = A_eff / 645.16      # mm2 -> inch2
     
-    # Formula: w (0.001 in) = 0.076 * beta * fs * (dc * A)^(1/3)
     w_thou = 0.076 * beta * fs_ksi * (dc_in * A_in)**(1/3)
-    
-    # Convert back to mm
     w_mm = (w_thou / 1000) * 25.4
     
     return w_mm, fs
 
 def arrange_bars_into_layers(total_n, db, b, cover, stir_db):
     """
-    [NEW] คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
+    คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
     """
     if total_n <= 0:
         return []
@@ -272,10 +321,9 @@ def arrange_bars_into_layers(total_n, db, b, cover, stir_db):
     inner_w = b - (2 * cover) - (2 * stir_db)
     min_spacing = max(25.0, db) # ACI: ระยะห่างช่องไฟขั้นต่ำ 25 mm หรือเท่ากับ db
     
-    # คำนวณจำนวนเหล็กสูงสุดที่ใส่ได้ใน 1 ชั้น
     max_per_layer = int((inner_w + min_spacing) // (db + min_spacing))
     if max_per_layer < 2: 
-        max_per_layer = 2 # อย่างน้อยต้องมีเหล็กมุม 2 เส้น
+        max_per_layer = 2 
         
     layers = []
     rem = int(total_n)
@@ -287,7 +335,7 @@ def arrange_bars_into_layers(total_n, db, b, cover, stir_db):
 
 def design_flexure_auto(Mu_kNm, b, h, cover, stir_db, main_db, fc, fy):
     """
-    [NEW] ระบบคำนวณเหล็กอัตโนมัติ: หา As -> จัดชั้น -> คำนวณ d จริง -> วนลูปเช็คซ้ำ
+    ระบบคำนวณเหล็กอัตโนมัติ: หา As -> จัดชั้น -> คำนวณ d จริง -> วนลูปเช็คซ้ำ
     Returns: layers, d_actual, as_req, as_prov, status, details
     """
     if Mu_kNm == 0:
@@ -302,24 +350,19 @@ def design_flexure_auto(Mu_kNm, b, h, cover, stir_db, main_db, fc, fy):
         
     a_bar = np.pi * (main_db / 2)**2
     n_bars = int(np.ceil(as_req / a_bar))
-    if n_bars < 2: n_bars = 2 # ขั้นต่ำ 2 เส้น
+    if n_bars < 2: n_bars = 2 
     
-    # 2. เข้าลูปคำนวณ (เผื่อดันเหล็กขึ้นชั้น 2 แล้ว d ลด ทำให้รับโมเมนต์ไม่พอ)
+    # 2. เข้าลูปคำนวณ
     max_iter = 5
     for _ in range(max_iter):
-        # จัดชั้นเหล็ก
         layers = arrange_bars_into_layers(n_bars, main_db, b, cover, stir_db)
-        
-        # หา d จริง จากการจัดชั้น
         d_actual, as_prov, y_bar = get_centroid_and_d(layers, h, cover, stir_db)
-        
-        # รีเช็ค As_req ใหม่ด้วย d_actual ที่ลดลง
         as_req_new, _, _, details_new = get_as_req(Mu_kNm, d_actual, fc, fy, b)
         
         if as_prov >= as_req_new:
-            details = details_new # อัปเดต details รอบสุดท้ายก่อนจบการทำงาน
-            break # เหล็กพอรับโมเมนต์แล้ว! หลุดลูปได้เลย
+            details = details_new 
+            break 
         else:
-            n_bars += 1 # ถ้า d ลดจนเหล็กเดิมรับไม่พอ ให้เพิ่มเหล็ก 1 เส้นแล้ววนลูปจัดชั้นใหม่
+            n_bars += 1 
             
     return layers, float(d_actual), float(as_req_new), float(as_prov), "OK", details
