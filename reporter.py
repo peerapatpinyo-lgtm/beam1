@@ -1,10 +1,11 @@
+# reporter.py
 import streamlit as st
 import numpy as np
 
 def render_calculation_report(res):
     """
     Ultra-Detailed ACI 318-19 Compliance Report.
-    Includes Clause References, Substitutions, Limit States, and Crack Width Control.
+    Includes Multiple-Layer Reinforcement, Centroid Calculations, and Strain at dt.
     """
     # --- Data Extraction ---
     idx = res.get('span_id', 0) + 1
@@ -20,11 +21,12 @@ def render_calculation_report(res):
     Ma = res.get('Ma_pos_svc', 0)    
     delta_svc = res.get('delta_svc_mm', 0) 
     
-    # Extract Reinforcement Data safely
-    bot = res.get('bot', {})
-    bot_n = bot.get('n', 0)
-    bot_db = bot.get('db', 12)
-    
+    # Extract Reinforcement Data (Support multiple layers)
+    bot_layers = res.get('bot_layers', [])
+    # Fallback for old single-layer data if bot_layers is empty
+    if not bot_layers and 'bot' in res:
+        bot_layers = [{'n': res['bot'].get('n', 0), 'db': res['bot'].get('db', 12)}]
+        
     shear = res.get('shear', {})
     stir_db = shear.get('db', res.get('stir_db', 9))
     stir_s = shear.get('s', res.get('stir_s', 150))
@@ -58,7 +60,6 @@ def render_calculation_report(res):
     with c2:
         st.write("**Steel Reinforcement:**")
         st.latex(rf"f_y = {fy} \text{{ MPa}}, \quad E_s = 200,000 \text{{ MPa}}")
-        # FIXED SYNTAX ERROR HERE (Escaped braces correctly)
         st.latex(rf"\text{{Section (b }} \times \text{{ h): }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     # =========================================================
@@ -66,57 +67,91 @@ def render_calculation_report(res):
     # =========================================================
     st.markdown("### 2. Flexural Strength Audit (Ref: ACI 22.2)")
     
-    # --- 2.1 Effective Depth (d) ---
-    d = h - cov - stir_db - (bot_db/2)
-    st.markdown("**2.1 Effective Depth Calculation ($d$)**")
-    st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
-    st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
+    # --- 2.1 Effective Depth (d) & Multiple Layers Calculation ---
+    st.markdown("**2.1 Effective Depth Calculation ($d_{eff}$) & Steel Layers**")
+    
+    total_As = 0.0
+    sum_Ay = 0.0
+    current_y = cov + stir_db
+    vertical_spacing = 25.0
+    dt = 0.0 # Depth to outermost layer
+    
+    if bot_layers:
+        for i, layer in enumerate(bot_layers):
+            n = layer['n']
+            db = layer['db']
+            if n <= 0: continue
+            
+            A_layer = n * (np.pi * (db/2)**2)
+            y_center = current_y + (db/2)
+            
+            if i == 0:
+                dt = h - y_center # ความลึกถึงเหล็กชั้นนอกสุด
+            
+            st.write(f"- **Layer {i+1}:** {n}-DB{db} | $A_{{s{i+1}}} = {A_layer:.1f} \text{{ mm}}^2$ | $y_{{{i+1}}} = {y_center:.1f} \text{{ mm}}$")
+            
+            total_As += A_layer
+            sum_Ay += (A_layer * y_center)
+            current_y += db + vertical_spacing
+            
+        y_bar = sum_Ay / total_As if total_As > 0 else 0
+        d_eff = h - y_bar
+    else:
+        st.warning("No bottom reinforcement provided.")
+        d_eff, total_As, y_bar, dt = 0, 0, 0, 0
+
+    if len(bot_layers) > 1:
+        st.latex(rf"\bar{{y}} = \frac{{\sum A_i y_i}}{{\sum A_i}} = \frac{{{sum_Ay:.1f}}}{{{total_As:.1f}}} = {y_bar:.1f} \text{{ mm}}")
+        st.latex(rf"d_{{eff}} = h - \bar{{y}} = {h} - {y_bar:.1f} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
+        st.info(f"💡 **Note:** Clear spacing between layers is assumed at 25 mm. Extreme tension steel depth ($d_t$) = **{dt:.1f} mm**.")
+    else:
+        st.latex(rf"d_{{eff}} = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
+        dt = d_eff
 
     # --- 2.2 Required Steel Calculation ---
     st.markdown("**2.2 Required Reinforcement ($A_{s,req}$)**")
     Mu_calc = abs(Mu) * 1e6
     phi_flex = 0.9
     
-    Rn = Mu_calc / (phi_flex * b * d**2) if d > 0 else 0
+    Rn = Mu_calc / (phi_flex * b * d_eff**2) if d_eff > 0 else 0
     term_inside = 1 - (2 * Rn) / (0.85 * fc)
     rho_req = (0.85 * fc / fy) * (1 - np.sqrt(term_inside)) if term_inside >= 0 else 0
     
     rho_min = max((0.25 * np.sqrt(fc) / fy), (1.4 / fy))
     rho_max = (0.85 * fc * beta1 / fy) * (0.003 / (0.003 + 0.005))
     
-    as_req_calc = rho_req * b * d
-    as_min_calc = rho_min * b * d
+    as_req_calc = rho_req * b * d_eff
+    as_min_calc = rho_min * b * d_eff
     as_final_req = max(as_req_calc, as_min_calc)
 
-    st.latex(rf"R_n = \frac{{M_u \times 10^6}}{{\phi b d^2}} = \frac{{{abs(Mu):.2f} \times 10^6}}{{{phi_flex} \cdot {b} \cdot ({d:.1f})^2}} = {Rn:.3f} \text{{ MPa}}")
-    st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = {rho_req:.5f}")
-    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = \max \left( \frac{{0.25\sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}} \right) = {rho_min:.5f}")
-    st.latex(rf"\rho_{{max}} = \left( \frac{{0.85 f'_c \beta_1}}{{f_y}} \right) \left( \frac{{0.003}}{{0.003 + 0.005}} \right) = \left( \frac{{0.85({fc})({beta1:.3f})}}{{{fy}}} \right) (0.375) = {rho_max:.5f}")
+    st.latex(rf"R_n = \frac{{M_u \times 10^6}}{{\phi b d_{{eff}}^2}} = {Rn:.3f} \text{{ MPa}}")
+    st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = {rho_req:.5f}")
+    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = {rho_min:.5f}")
     
-    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {rho_req:.5f} \cdot {b} \cdot {d:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
-    st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {rho_min:.5f} \cdot {b} \cdot {d:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d_{{eff}} = {as_req_calc:.1f} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,min}} = \rho_{{min}} b d_{{eff}} = {as_min_calc:.1f} \text{{ mm}}^2")
     st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
 
     # --- 2.3 Provided Steel Calculation ---
     st.markdown("**2.3 Provided Reinforcement ($A_{s,prov}$)**")
-    As = bot_n * (np.pi * (bot_db**2) / 4)
-    st.latex(rf"A_{{s,prov}} = n \times \frac{{\pi d_b^2}}{{4}} = {bot_n} \times \frac{{\pi ({bot_db})^2}}{{4}} = \mathbf{{{As:.1f}}} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,prov}} = \sum A_{{layer}} = \mathbf{{{total_As:.1f}}} \text{{ mm}}^2")
     
-    if As >= as_final_req:
-        st.success(rf"✅ Check: Provided $A_s$ ({As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
+    if total_As >= as_final_req:
+        st.success(rf"✅ Check: Provided $A_s$ ({total_As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
     else:
-        st.error(rf"❌ Check: Provided $A_s$ ({As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
+        st.error(rf"❌ Check: Provided $A_s$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
 
     # --- 2.4 Section Capacity & Strain Check ---
-    st.markdown("**2.4 Stress Block & Ductility Check**")
-    if As > 0:
-        a = (As * fy) / (0.85 * fc * b)
+    st.markdown("**2.4 Stress Block & Ductility Check (ACI 21.2.2)**")
+    if total_As > 0:
+        a = (total_As * fy) / (0.85 * fc * b)
         c_neutral = a / beta1
     else:
         a = 0; c_neutral = 0
 
     if c_neutral > 0:
-        epsilon_t = 0.003 * (d - c_neutral) / c_neutral
+        # ใช้ dt ในการคำนวณความเครียดเหล็กเสริมชั้นนอกสุด ตาม ACI
+        epsilon_t = 0.003 * (dt - c_neutral) / c_neutral
     else:
         epsilon_t = 999 
 
@@ -130,16 +165,16 @@ def render_calculation_report(res):
         phi_f = 0.65 + 0.25 * (epsilon_t - 0.002) / 0.003
         state = "Transition Zone"
 
-    st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{As:.1f} \cdot {fy}}}{{0.85 \cdot {fc} \cdot {b}}} = {a:.2f}\text{{ mm}}")
+    st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{total_As:.1f} \cdot {fy}}}{{0.85 \cdot {fc} \cdot {b}}} = {a:.2f}\text{{ mm}}")
     st.latex(rf"c = \frac{{a}}{{\beta_1}} = \frac{{{a:.2f}}}{{{beta1:.3f}}} = {c_neutral:.2f}\text{{ mm}}")
-    st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d - c}}{{c}} \right) = 0.003 \left( \frac{{{d:.1f} - {c_neutral:.2f}}}{{{c_neutral:.2f}}} \right) = \mathbf{{{epsilon_t:.5f}}}")
+    st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d_t - c}}{{c}} \right) = 0.003 \left( \frac{{{dt:.1f} - {c_neutral:.2f}}}{{{c_neutral:.2f}}} \right) = \mathbf{{{epsilon_t:.5f}}}")
     st.info(rf"**Result:** {state} | Strength Reduction Factor ($\phi$) = **{phi_f:.3f}**")
 
     # --- 2.5 Ultimate Strength Limit State ---
-    Mn = As * fy * (d - a/2) * 1e-6
+    Mn = total_As * fy * (d_eff - a/2) * 1e-6
     phiMn = phi_f * Mn
     st.markdown("**2.5 Ultimate Flexural Capacity ($\phi M_n$)**")
-    st.latex(rf"M_n = A_s f_y \left(d - \frac{{a}}{{2}}\right) \times 10^{{-6}} = {As:.1f} \cdot {fy} \cdot \left({d:.1f} - \frac{{{a:.2f}}}{{2}}\right) \times 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
+    st.latex(rf"M_n = A_s f_y \left(d_{{eff}} - \frac{{a}}{{2}}\right) \times 10^{{-6}} = {total_As:.1f} \cdot {fy} \cdot \left({d_eff:.1f} - \frac{{{a:.2f}}}{{2}}\right) \times 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
     st.latex(rf"\phi M_n = {phi_f:.3f} \times {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
     
     if phiMn >= abs(Mu):
@@ -154,15 +189,15 @@ def render_calculation_report(res):
     st.markdown("### 3. Shear Strength Audit (Ref: ACI 22.5)")
     st.latex(rf"\text{{Factored Shear Force, }} V_u = {abs(Vu):.2f}\text{{ kN}}")
     
-    Vc = (0.17 * 1.0 * np.sqrt(fc) * b * d) / 1000
+    Vc = (0.17 * 1.0 * np.sqrt(fc) * b * d_eff) / 1000
     Av = 2 * (np.pi * (stir_db**2) / 4) 
     
-    st.latex(rf"A_v = 2 \times \frac{{\pi d_b^2}}{{4}} = 2 \times \frac{{\pi ({stir_db})^2}}{{4}} = {Av:.1f} \text{{ mm}}^2 \quad \text{{(2 legs)}}")
-    st.latex(rf"V_c = 0.17 \lambda \sqrt{{f'_c}} b_w d = \frac{{0.17(1.0)\sqrt{{{fc}}}({b})({d:.1f})}}{{1000}} = {Vc:.2f}\text{{ kN}}")
+    st.latex(rf"A_v = 2 \times \frac{{\pi d_b^2}}{{4}} = {Av:.1f} \text{{ mm}}^2 \quad \text{{(2 legs)}}")
+    st.latex(rf"V_c = 0.17 \lambda \sqrt{{f'_c}} b_w d_{{eff}} = {Vc:.2f}\text{{ kN}}")
     
     if stir_s > 0:
-        Vs = (Av * fy * d / stir_s) / 1000
-        st.latex(rf"V_s = \frac{{A_v f_{{yt}} d}}{{s}} = \frac{{{Av:.1f} \cdot {fy} \cdot {d:.1f}}}{{{stir_s} \cdot 1000}} = {Vs:.2f}\text{{ kN}}")
+        Vs = (Av * fy * d_eff / stir_s) / 1000
+        st.latex(rf"V_s = \frac{{A_v f_{{yt}} d_{{eff}}}}{{s}} = {Vs:.2f}\text{{ kN}}")
     else:
         Vs = 0
         st.latex(r"V_s = 0 \text{ kN (No shear reinforcement provided)}")
@@ -175,8 +210,8 @@ def render_calculation_report(res):
     else:
         st.error(rf"❌ Shear INSUFFICIENT: $\phi V_n$ ({phiVn:.2f} kN) $< V_u$ ({abs(Vu):.2f} kN)")
 
-    s_max = min(d/2, 600)
-    st.markdown(rf"**ACI Maximum Spacing Limit ($s_{{max}}$):** $\min(d/2, 600) = \min({d:.1f}/2, 600) = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
+    s_max = min(d_eff/2, 600)
+    st.markdown(rf"**ACI Maximum Spacing Limit ($s_{{max}}$):** $\min(d/2, 600) = \mathbf{{{s_max:.0f}}}\text{{ mm}}$")
     if stir_s <= s_max:
         st.caption(rf"✅ Spacing OK: Provided $s$ ({stir_s} mm) $\le s_{{max}}$ ({s_max:.0f} mm)")
     else:
@@ -194,7 +229,7 @@ def render_calculation_report(res):
     allowable_def = L_mm / 240
     
     st.write("**Instantaneous Deflection Limit (L/240):**")
-    st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{240}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
+    st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
     st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
 
     if abs(delta_svc) <= allowable_def:
@@ -209,10 +244,10 @@ def render_calculation_report(res):
         crack_data = res['crack']
         w_val = crack_data.get('w', 0)
         w_lim = crack_data.get('limit', 0.4)
-        status = crack_data.get('status', 'N/A')
         
         fs = fy * 0.6 # Approximation for service steel stress
-        A_eff = (2 * cov * b) / bot_n if bot_n > 0 else 0
+        bot_n_total = sum(layer['n'] for layer in bot_layers) if bot_layers else 0
+        A_eff = (2 * cov * b) / bot_n_total if bot_n_total > 0 else 0
         
         st.markdown("Based on Gergely-Lutz equation (Modified for SI):")
         st.latex(rf"w = 0.076 \beta f_s \sqrt[3]{{d_c A}}")
