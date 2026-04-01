@@ -40,9 +40,10 @@ def get_centroid_and_d(layers, h, cover, stir_db):
 def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     """
     Calculate Required Steel Area based on ACI 318
+    (เพิ่มการ Return `details` เพื่อนำไปแสดงรายการคำนวณ)
     """
     if Mu_kNm == 0 or d_eff_mm <= 0: 
-        return 0.0, 0.0, False
+        return 0.0, 0.0, False, {}
         
     Mu = abs(Mu_kNm) * 1e6 
     phi = 0.9 
@@ -51,16 +52,33 @@ def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     term_inside = 1 - (2 * Rn) / (0.85 * fc)
     
     if term_inside < 0:
-        return 0.0, 0.0, True 
+        return 0.0, 0.0, True, {} 
 
     rho = (0.85 * fc / fy) * (1 - np.sqrt(term_inside))
     as_req_calc = rho * b_mm * d_eff_mm
     
     as_min = max((0.25 * np.sqrt(fc) / fy) * b_mm * d_eff_mm, (1.4 / fy) * b_mm * d_eff_mm)
     
+    # คำนวณค่าเพิ่มเติมสำหรับทำรายการคำนวณ (Report)
+    rho_min = as_min / (b_mm * d_eff_mm)
+    beta1 = get_beta1(fc)
+    rho_max = (0.85 * fc * beta1 / fy) * (0.003 / (0.003 + 0.005))
+    
     as_final = max(as_req_calc, as_min)
     
-    return float(as_final), float(rho), False
+    details = {
+        "Mu": Mu,
+        "phi": phi,
+        "Rn": Rn,
+        "rho_req": rho,
+        "rho_min": rho_min,
+        "rho_max": rho_max,
+        "as_req_calc": as_req_calc,
+        "as_min": as_min,
+        "as_final": as_final
+    }
+    
+    return float(as_final), float(rho), False, details
 
 def get_phi_Mn_details_multi(layers, d_eff, b, h, fc, fy):
     """
@@ -270,17 +288,17 @@ def arrange_bars_into_layers(total_n, db, b, cover, stir_db):
 def design_flexure_auto(Mu_kNm, b, h, cover, stir_db, main_db, fc, fy):
     """
     [NEW] ระบบคำนวณเหล็กอัตโนมัติ: หา As -> จัดชั้น -> คำนวณ d จริง -> วนลูปเช็คซ้ำ
-    Returns: layers, d_actual, as_req, as_prov, status
+    Returns: layers, d_actual, as_req, as_prov, status, details
     """
     if Mu_kNm == 0:
-        return [], float(h - cover - stir_db - (main_db/2)), 0.0, 0.0, "OK"
+        return [], float(h - cover - stir_db - (main_db/2)), 0.0, 0.0, "OK", {}
         
     # 1. สมมติฐานแรกลองให้เหล็กเรียงชั้นเดียวก่อน
     d_assume = h - cover - stir_db - (main_db / 2)
-    as_req, _, is_over_max = get_as_req(Mu_kNm, d_assume, fc, fy, b)
+    as_req, _, is_over_max, details = get_as_req(Mu_kNm, d_assume, fc, fy, b)
     
     if is_over_max:
-        return [], float(d_assume), float(as_req), 0.0, "FAIL (Section too small/Need Compression Steel)"
+        return [], float(d_assume), float(as_req), 0.0, "FAIL (Section too small/Need Compression Steel)", details
         
     a_bar = np.pi * (main_db / 2)**2
     n_bars = int(np.ceil(as_req / a_bar))
@@ -296,11 +314,12 @@ def design_flexure_auto(Mu_kNm, b, h, cover, stir_db, main_db, fc, fy):
         d_actual, as_prov, y_bar = get_centroid_and_d(layers, h, cover, stir_db)
         
         # รีเช็ค As_req ใหม่ด้วย d_actual ที่ลดลง
-        as_req_new, _, _ = get_as_req(Mu_kNm, d_actual, fc, fy, b)
+        as_req_new, _, _, details_new = get_as_req(Mu_kNm, d_actual, fc, fy, b)
         
         if as_prov >= as_req_new:
+            details = details_new # อัปเดต details รอบสุดท้ายก่อนจบการทำงาน
             break # เหล็กพอรับโมเมนต์แล้ว! หลุดลูปได้เลย
         else:
             n_bars += 1 # ถ้า d ลดจนเหล็กเดิมรับไม่พอ ให้เพิ่มเหล็ก 1 เส้นแล้ววนลูปจัดชั้นใหม่
             
-    return layers, float(d_actual), float(as_req_new), float(as_prov), "OK"
+    return layers, float(d_actual), float(as_req_new), float(as_prov), "OK", details
