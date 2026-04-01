@@ -1,4 +1,3 @@
-# reporter.py
 import streamlit as st
 import numpy as np
 
@@ -8,7 +7,6 @@ def render_calculation_report(res):
     Includes Clause References, Substitutions, Limit States, and Crack Width Control.
     """
     # --- Data Extraction ---
-    # ใช้ .get() เพื่อป้องกัน Error กรณี key ไม่ครบ
     idx = res.get('span_id', 0) + 1
     L_m = res.get('L', 0)
     b = res.get('b', 200) 
@@ -48,7 +46,7 @@ def render_calculation_report(res):
     st.divider()
 
     # =========================================================
-    # 1. MATERIAL & SECTION PROPERTIES (ACI 19.2 & 20.2)
+    # 1. MATERIAL & SECTION PROPERTIES
     # =========================================================
     st.markdown("### 1. Materials & Geometry (Ref: ACI 19.2 & 20.2)")
     c1, c2 = st.columns(2)
@@ -64,7 +62,7 @@ def render_calculation_report(res):
         st.latex(rf"\text{{Section: }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     # =========================================================
-    # 2. FLEXURAL CAPACITY AUDIT (ACI 22.2)
+    # 2. FLEXURAL CAPACITY AUDIT
     # =========================================================
     st.markdown("### 2. Flexural Strength Audit (Ref: ACI 22.2)")
     
@@ -74,10 +72,9 @@ def render_calculation_report(res):
     st.latex(rf"d = h - c_{{clear}} - \text{{db}}_{{stirrup}} - \frac{{\text{{db}}_{{bar}}}}{{2}}")
     st.latex(rf"d = {h} - {cov} - {stir_db} - \frac{{{bot_db}}}{{2}} = \mathbf{{{d:.1f}}}\text{{ mm}}")
 
-    # [NEW] 2.2 Step-by-Step Required Steel Calculation
+    # 2.2 Step-by-Step Required Steel Calculation
     st.markdown("**2.2 Required Reinforcement Calculation ($A_{s,req}$)**")
     
-    # --- อธิบายเรื่องการแปลงหน่วย ---
     st.info("💡 **ข้อสังเกตเรื่องการแปลงหน่วย (Unit Conversion):**\n"
             "* โมเมนต์ประลัย ($M_u$) เดิมมีหน่วยเป็น $kN \cdot m$ จำเป็นต้องแปลงเป็น $N \cdot mm$ โดยการคูณ $10^6$\n"
             "* สาเหตุเพื่อให้สอดคล้องกับ $f'_c$ และ $f_y$ ที่มีหน่วยเป็น $MPa$ ($N/mm^2$) และมิติหน้าตัดคาน $b, d$ ที่เป็น $mm$ เพื่อให้หน่วยตัดกันได้พอดี")
@@ -97,26 +94,25 @@ def render_calculation_report(res):
     as_min_calc = rho_min * b * d
     as_final_req = max(as_req_calc, as_min_calc)
 
-    # แสดงวิธีทำ: สูตร -> แทนค่า -> ตอบ
     st.markdown("**Step A: หาค่า $R_n$ (Coefficient of Resistance)**")
     st.latex(r"R_n = \frac{M_u \times 10^6}{\phi b d^2}")
     st.latex(rf"R_n = \frac{{{Mu_abs:.2f} \times 10^6}}{{{phi_flex} \cdot {b} \cdot {d:.1f}^2}} = \mathbf{{{Rn:.3f}}} \text{{ MPa}}")
 
     st.markdown("**Step B: หาค่าอัตราส่วนเหล็กเสริมที่ต้องการ ($\rho_{req}$)**")
     st.latex(r"\rho_{req} = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
-    st.latex(rf"\rho_{req} = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = \mathbf{{{rho_req:.5f}}}")
+    st.latex(rf"\rho_{{req}} = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = \mathbf{{{rho_req:.5f}}}")
 
     st.markdown("**Step C: ตรวจสอบปริมาณเหล็กเสริมต่ำสุดและสูงสุด ($\rho_{min}, \rho_{max}$)**")
     st.latex(r"\rho_{min} = \max \left( \frac{0.25\sqrt{f'_c}}{f_y}, \frac{1.4}{f_y} \right)")
-    st.latex(rf"\rho_{min} = \max \left( \frac{{0.25\sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}} \right) = \mathbf{{{rho_min:.5f}}}")
+    st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}} \right) = \mathbf{{{rho_min:.5f}}}")
     
     st.latex(r"\rho_{max} = \left( \frac{0.85 f'_c \beta_1}{f_y} \right) \left( \frac{0.003}{0.003 + 0.005} \right)")
-    st.latex(rf"\rho_{max} = \left( \frac{{0.85({fc})({beta1:.3f})}}{{{fy}}} \right) \left( \frac{{0.003}}{{0.008}} \right) = \mathbf{{{rho_max:.5f}}}")
+    st.latex(rf"\rho_{{max}} = \left( \frac{{0.85({fc})({beta1:.3f})}}{{{fy}}} \right) \left( \frac{{0.003}}{{0.008}} \right) = \mathbf{{{rho_max:.5f}}}")
 
     st.markdown("**Step D: สรุปพื้นที่เหล็กเสริมที่ต้องการ ($A_{s,req}$)**")
-    st.latex(rf"A_{{s,req\_calc}} = \rho_{{req}} b d = {rho_req:.5f} \cdot {b} \cdot {d:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
+    st.latex(rf"A_{{s,req}} = \rho_{{req}} b d = {rho_req:.5f} \cdot {b} \cdot {d:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
     st.latex(rf"A_{{s,min}} = \rho_{{min}} b d = {rho_min:.5f} \cdot {b} \cdot {d:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
-    st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req\_calc}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
+    st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
 
     # 2.3 Provided Steel & Section Capacity Check
     st.markdown("**2.3 Section Capacity Verification**")
@@ -127,7 +123,6 @@ def render_calculation_report(res):
     else:
         st.error(f"❌ Provided As ({As:.1f} mm²) < Required As ({as_final_req:.1f} mm²)")
 
-    # Calculate a (Depth of equivalent rectangular stress block)
     if As > 0:
         a = (As * fy) / (0.85 * fc * b)
         c_neutral = a / beta1
@@ -135,13 +130,11 @@ def render_calculation_report(res):
         a = 0
         c_neutral = 0
 
-    # Calculate Strain
     if c_neutral > 0:
         epsilon_t = 0.003 * (d - c_neutral) / c_neutral
     else:
-        epsilon_t = 999 # Infinite ductility implies no compression block
+        epsilon_t = 999 
 
-    # Determine Phi (Table 21.2.2)
     if epsilon_t >= 0.005:
         phi_f = 0.90
         state = "Tension-Controlled (Ductile)"
@@ -170,7 +163,7 @@ def render_calculation_report(res):
         st.error(rf"❌ $\phi M_n ({phiMn:.2f} \text{{ kNm}}) < M_u ({Mu_abs:.2f} \text{{ kNm}})$ — INSUFFICIENT")
 
     # =========================================================
-    # 3. SHEAR CAPACITY AUDIT (ACI 22.5)
+    # 3. SHEAR CAPACITY AUDIT
     # =========================================================
     st.divider()
     st.markdown("### 3. Shear Strength Audit (Ref: ACI 22.5)")
@@ -198,7 +191,7 @@ def render_calculation_report(res):
         st.error(f"❌ Spacing exceeds limit ({s_max:.0f} mm)")
 
     # =========================================================
-    # 4. SERVICEABILITY AUDIT (ACI 24.2 & Gergely-Lutz)
+    # 4. SERVICEABILITY AUDIT
     # =========================================================
     st.divider()
     st.markdown("### 4. Serviceability Audit (Ref: ACI 24.2)")
@@ -246,9 +239,9 @@ def render_calculation_report(res):
             """)
             
         if w_val > w_lim:
-             st.error(f"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
+            st.error(f"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
         else:
-             st.success(f"✅ Crack width control passed.")
+            st.success(f"✅ Crack width control passed.")
     else:
         st.info("Crack width analysis not available for this run.")
 
