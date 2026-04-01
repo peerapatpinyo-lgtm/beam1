@@ -1,10 +1,12 @@
+# reporter.py
 import streamlit as st
 import numpy as np
+from rc_design_engine import get_phi_Mn_details_multi # <--- นำเข้าฟังก์ชันที่อัปเกรดแล้ว
 
 def render_calculation_report(res):
     """
     Ultra-Detailed ACI 318-19 Compliance Report.
-    Full Equation Substitution, Multiple-Layer Reinforcement, and Strain at dt.
+    Full Equation Substitution, Multiple-Layer Reinforcement, and Strain Compatibility.
     """
     # --- Data Extraction ---
     idx = res.get('span_id', 0) + 1
@@ -23,14 +25,11 @@ def render_calculation_report(res):
     
     # --- Fix: Robust Multiple Layer Data Extraction ---
     def extract_layers(res_dict, prefix):
-        # ลองดึงจาก prefix_layers ตรงๆ ก่อน
         layers = res_dict.get(f'{prefix}_layers', [])
         if not layers and prefix in res_dict:
-            # ถ้าไม่มี ลองเข้าไปดูใน nested dictionary (เช่น res['bot']['all_layers'])
             if 'all_layers' in res_dict[prefix]:
                 layers = res_dict[prefix]['all_layers']
             else:
-                # ถ้าหาไม่เจอจริงๆ ค่อยใช้ fallback เป็นชั้นเดียว
                 layers = [{'n': res_dict[prefix].get('n', 0), 'db': res_dict[prefix].get('db', 12)}]
         return layers
 
@@ -75,27 +74,29 @@ def render_calculation_report(res):
     st.divider()
 
     # =========================================================
-    # HELPER FUNCTION FOR FLEXURAL AUDIT (FULL DETAILED)
+    # HELPER FUNCTION FOR FLEXURAL AUDIT (UPGRADED TO STRAIN COMPATIBILITY)
     # =========================================================
-    def render_flexural_audit(title, Mu, layers, is_top=False):
+    def render_flexural_audit(title, Mu, all_bot_layers, all_top_layers, is_top=False):
         st.markdown(f"#### {title}")
         
         if abs(Mu) == 0:
             st.info("No moment demand for this section.")
             return 0, 0
             
+        # เลือกแสดงผลเหล็กรับแรงดึงเพื่อหา d_eff ประมาณการ (ใช้กับ As,req)
+        tension_layers = all_top_layers if is_top else all_bot_layers
+        valid_t_layers = [ly for ly in tension_layers if ly.get('n', 0) > 0 and ly.get('db', 0) > 0]
+        
         total_As = 0.0
         sum_Ay = 0.0
         current_y = cov + stir_db
         vertical_spacing = 25.0
-        dt = 0.0 
+        dt_approx = 0.0 
         
-        st.markdown(f"**1. Effective Depth Calculation ($d_{{eff}}$) & Steel Layers**")
+        st.markdown(f"**1. Reinforcement Details (Tension Side)**")
         
-        valid_layers = [ly for ly in layers if ly.get('n', 0) > 0 and ly.get('db', 0) > 0]
-        
-        if valid_layers:
-            for i, layer in enumerate(valid_layers):
+        if valid_t_layers:
+            for i, layer in enumerate(valid_t_layers):
                 n = layer['n']
                 db = layer['db']
                 
@@ -103,7 +104,7 @@ def render_calculation_report(res):
                 y_center = current_y + (db/2)
                 
                 if i == 0:
-                    dt = h - y_center # ความลึกถึงเหล็กชั้นนอกสุด
+                    dt_approx = h - y_center 
                 
                 st.write(f"- **Layer {i+1}:** {int(n)}-DB{int(db)} | $A_{{s{i+1}}} = {A_layer:.1f} \text{{ mm}}^2$ | $y_{{{i+1}}} = {y_center:.1f} \text{{ mm}}$")
                 
@@ -114,19 +115,17 @@ def render_calculation_report(res):
             y_bar = sum_Ay / total_As if total_As > 0 else 0
             d_eff = h - y_bar
             
-            if len(valid_layers) > 1:
+            if len(valid_t_layers) > 1:
                 st.latex(rf"\bar{{y}} = \frac{{\sum A_i y_i}}{{\sum A_i}} = \frac{{{sum_Ay:.1f}}}{{{total_As:.1f}}} = {y_bar:.1f} \text{{ mm}}")
-                st.latex(rf"d_{{eff}} = h - \bar{{y}} = {h} - {y_bar:.1f} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
-                st.info(f"💡 **Note:** Extreme tension steel depth ($d_t$) = **{dt:.1f} mm**.")
+                st.latex(rf"d_{{eff}} = h - \bar{{y}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
             else:
-                st.latex(rf"d_{{eff}} = h - c_{{clear}} - d_{{stirrup}} - \frac{{d_{{b}}}}{{2}} = {h} - {cov} - {stir_db} - \frac{{{valid_layers[0]['db']}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
-                dt = d_eff
+                st.latex(rf"d_{{eff}} = h - c_{{clear}} - d_{{stirrup}} - \frac{{d_{{b}}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
         else:
             st.warning("No reinforcement provided.")
-            d_eff, total_As, y_bar, dt = 0, 0, 0, 0
+            d_eff, total_As, y_bar, dt_approx = 0, 0, 0, 0
             return 0, 0
 
-        # --- Required Steel Calculation (Full Detail) ---
+        # --- Required Steel Calculation (Basic Approx) ---
         st.markdown("**2. Required Reinforcement ($A_{s,req}$)**")
         Mu_calc = abs(Mu) * 1e6
         phi_flex = 0.9
@@ -141,84 +140,82 @@ def render_calculation_report(res):
         as_min_calc = rho_min * b * d_eff
         as_final_req = max(as_req_calc, as_min_calc)
 
-        st.latex(rf"R_n = \frac{{M_u \times 10^6}}{{\phi b d_{{eff}}^2}} = \frac{{{abs(Mu):.2f} \times 10^6}}{{0.9 \times {b:.0f} \times {d_eff:.1f}^2}} = {Rn:.3f} \text{{ MPa}}")
-        st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85 f'_c}}}} \right) = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = {rho_req:.5f}")
-        st.latex(rf"\rho_{{min}} = \max \left( \frac{{0.25\sqrt{{f'_c}}}}{{f_y}}, \frac{{1.4}}{{f_y}} \right) = {rho_min:.5f}")
-        
         st.latex(rf"A_{{s,req}} = \rho_{{req}} b d_{{eff}} = {rho_req:.5f} \times {b:.0f} \times {d_eff:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
         st.latex(rf"A_{{s,min}} = \rho_{{min}} b d_{{eff}} = {rho_min:.5f} \times {b:.0f} \times {d_eff:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
-        
         st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
-        
-        st.markdown("**3. Provided Reinforcement ($A_{s,prov}$)**")
-        st.latex(rf"A_{{s,prov}} = \sum A_{{layer}} = \mathbf{{{total_As:.1f}}} \text{{ mm}}^2")
         
         if total_As >= as_final_req:
             st.success(rf"✅ Check: Provided $A_s$ ({total_As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
         else:
             st.error(rf"❌ Check: Provided $A_s$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
 
-        # --- Section Capacity & Strain Check (Full Detail) ---
-        st.markdown("**4. Stress Block & Ductility Check (ACI 21.2.2)**")
-        if total_As > 0:
-            a = (total_As * fy) / (0.85 * fc * b)
-            c_neutral = a / beta1
-            epsilon_t = 0.003 * (dt - c_neutral) / c_neutral if c_neutral > 0 else 999
-        else:
-            a, c_neutral, epsilon_t = 0, 0, 0
+        # ==========================================
+        # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS
+        # ==========================================
+        st.markdown("**3. Strain Compatibility & Stress Block (Iterative Method)**")
+        
+        # เรียกใช้งาน Engine คำนวณแบบละเอียด
+        phiMn_val, As_t_val, a_val, Mn_val, c_val, eps_t_val, layer_res = get_phi_Mn_details_multi(
+            all_bot_layers, all_top_layers, b, h, fc, fy, cov, stir_db, is_top_tension=is_top
+        )
 
-        if epsilon_t >= 0.005:
+        st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
+        st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
+        
+        st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
+        for res in layer_res:
+            # ตกแต่ง UI ไอคอน
+            if res['type'] == 'Tension':
+                status = "🟢 Yielded" if res['is_yielded'] else "🟡 Elastic"
+                st.write(f"- **Bar @ $d$ = {res['d_i']:.1f} mm** ({res['type']}): $\epsilon_s$ = {res['eps_s']:.5f} | $f_s$ = {res['fs']:.1f} MPa | {status}")
+            else:
+                status = "🔴 Yielded (Comp)" if res['is_yielded'] else "⚪ Elastic (Comp)"
+                st.write(f"- **Bar @ $d'$ = {res['d_i']:.1f} mm** ({res['type']}): $\epsilon_s$ = {res['eps_s']:.5f} | $f_s$ = {res['fs']:.1f} MPa | {status}")
+
+        # --- Ultimate Strength Limit State ---
+        st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$)**")
+        
+        if eps_t_val >= 0.005:
             phi_f = 0.90
             state = "Tension-Controlled (Ductile)"
-        elif epsilon_t <= 0.002:
+        elif eps_t_val <= 0.002:
             phi_f = 0.65
             state = "Compression-Controlled (Brittle)"
         else:
-            phi_f = 0.65 + 0.25 * (epsilon_t - 0.002) / 0.003
+            phi_f = 0.65 + 0.25 * (eps_t_val - 0.002) / 0.003
             state = "Transition Zone"
 
-        st.latex(rf"a = \frac{{A_s f_y}}{{0.85 f'_c b}} = \frac{{{total_As:.1f} \times {fy}}}{{0.85 \times {fc} \times {b:.0f}}} = {a:.2f}\text{{ mm}}")
-        st.latex(rf"c = \frac{{a}}{{\beta_1}} = \frac{{{a:.2f}}}{{{beta1:.3f}}} = {c_neutral:.2f}\text{{ mm}}")
-        st.latex(rf"\epsilon_t = 0.003 \left( \frac{{d_t - c}}{{c}} \right) = 0.003 \left( \frac{{{dt:.1f} - {c_neutral:.2f}}}{{{c_neutral:.2f}}} \right) = \mathbf{{{epsilon_t:.5f}}}")
-        
-        if epsilon_t < 0.004 and total_As > 0:
-            st.error(f"❌ **Code Violation:** $\epsilon_t < 0.004$. Section is over-reinforced per ACI 318-19. Increase section size or add compression steel.")
-        else:
-            st.info(rf"**Result:** {state} | Strength Reduction Factor ($\phi$) = **{phi_f:.3f}**")
-
-        # --- Ultimate Strength Limit State ---
-        st.markdown("**5. Ultimate Flexural Capacity ($\phi M_n$)**")
-        Mn = total_As * fy * (d_eff - a/2) * 1e-6 if d_eff > 0 else 0
-        phiMn = phi_f * Mn
-        
-        st.latex(rf"M_n = A_s f_y \left(d_{{eff}} - \frac{{a}}{{2}}\right) \times 10^{{-6}} = {total_As:.1f} \times {fy} \times \left({d_eff:.1f} - \frac{{{a:.2f}}}{{2}}\right) \times 10^{{-6}} = {Mn:.2f}\text{{ kNm}}")
-        st.latex(rf"\phi M_n = {phi_f:.3f} \times {Mn:.2f} = \mathbf{{{phiMn:.2f}}}\text{{ kNm}}")
+        st.latex(rf"\epsilon_t = \mathbf{{{eps_t_val:.5f}}} \implies \phi = {phi_f:.3f} \text{{ ({state})}}")
+        st.latex(rf"M_{{n,exact}} = \sum (F_i \times \text{{arm}}_i) + M_{{concrete}} = {Mn_val:.2f}\text{{ kNm}}")
+        st.latex(rf"\phi M_n = {phi_f:.3f} \times {Mn_val:.2f} = \mathbf{{{phiMn_val:.2f}}}\text{{ kNm}}")
         
         mc1, mc2, mc3 = st.columns(3)
         mc1.metric(label="Required Demand ($M_u$)", value=f"{abs(Mu):.2f} kNm")
-        mc2.metric(label="Provided Capacity ($\phi M_n$)", value=f"{phiMn:.2f} kNm", delta=f"{phiMn - abs(Mu):.2f} kNm")
+        mc2.metric(label="Provided Capacity ($\phi M_n$)", value=f"{phiMn_val:.2f} kNm", delta=f"{phiMn_val - abs(Mu):.2f} kNm")
         
-        if phiMn >= abs(Mu) and total_As >= as_min_calc and epsilon_t >= 0.004:
+        if phiMn_val >= abs(Mu) and eps_t_val >= 0.004:
             mc3.success("✅ STATUS: PASS")
+        elif eps_t_val < 0.004:
+            mc3.error("❌ STATUS: FAIL (Code Violation: ε_t < 0.004)")
         else:
-            mc3.error("❌ STATUS: FAIL")
+            mc3.error("❌ STATUS: FAIL (Capacity)")
 
-        return d_eff, dt
+        return d_eff, dt_approx
 
     # =========================================================
     # 2. FLEXURAL CAPACITY AUDIT (Execution)
     # =========================================================
     st.markdown("### 2. Flexural Strength Audit (Ref: ACI 22.2)")
     
-    # Render Top Reinforcement (Negative Moment)
+    # Render Top Reinforcement (Negative Moment) -> is_top=True
     st.markdown("🔽 **NEGATIVE MOMENT (Support / Top Steel)**")
-    render_flexural_audit("Top Reinforcement Evaluation", Mu_neg, top_layers, is_top=True)
+    render_flexural_audit("Top Reinforcement Evaluation", Mu_neg, bot_layers, top_layers, is_top=True)
     
     st.write("---")
     
-    # Render Bottom Reinforcement (Positive Moment)
+    # Render Bottom Reinforcement (Positive Moment) -> is_top=False
     st.markdown("🔼 **POSITIVE MOMENT (Mid-span / Bottom Steel)**")
-    d_eff_bot, dt_bot = render_flexural_audit("Bottom Reinforcement Evaluation", Mu_pos, bot_layers, is_top=False)
+    d_eff_bot, dt_bot = render_flexural_audit("Bottom Reinforcement Evaluation", Mu_pos, bot_layers, top_layers, is_top=False)
 
 
     # =========================================================
@@ -308,4 +305,4 @@ def render_calculation_report(res):
         st.info("Crack width analysis data not available.")
 
     st.divider()
-    st.caption("Generated by Pro RC Beam Design Software | ACI 318-19 Compliant")
+    st.caption("Generated by Pro RC Beam Design Software | ACI 318-19 Compliant (Rigorous Strain Compatibility)")
