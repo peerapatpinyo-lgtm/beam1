@@ -328,7 +328,7 @@ else:
                         d_t_val, as_prov_t, y_centroid_t = rc_design_engine.get_centroid_and_d(top_layers, h_mm, cover_mm, stir_db)
                         # ถ้าไม่มีเหล็ก ใส่ดักไว้กันพัง
                         d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + stir_db + 16/2)
-                        
+
                         phi_Mn_t, *_ = rc_design_engine.get_phi_Mn_details_multi(
                             bot_layers, top_layers, b, h, fc, fy, cover, stir_db, is_top_tension=True
                             )
