@@ -1,41 +1,52 @@
 # rc_design_engine.py
 import numpy as np
 from rc_utils import get_beta1
+import math
 
-def get_centroid_and_d(layers, h, cover, stir_db):
+def get_centroid_and_d(layers, h_mm, cover_mm, stir_db):
     """
-    คำนวณจุดศูนย์ถ่วงของกลุ่มเหล็กเสริม (Centroid) และ Effective Depth (d)
-    layers: list ของ dict เช่น [{'n': 3, 'db': 20}, {'n': 2, 'db': 20}]
+    คำนวณหาพื้นที่เหล็กสะสม (As), ระยะจุดศูนย์ถ่วง (y_bar), และความลึกประสิทธิผล (d)
+    รองรับเหล็กหลายชั้น
     """
-    if not layers:
-        return 0.0, 0.0, 0.0
-    
     total_area = 0.0
-    sum_ay = 0.0
-    vertical_spacing = 25.0 
+    sum_area_y = 0.0
     
-    current_y_from_bottom = cover + stir_db
+    # ระยะห่างช่องว่างระหว่างชั้นเหล็ก (Clear Spacing) มาตรฐาน วสท./ACI มักใช้ 25 mm หรือ ขนาดเหล็กที่ใหญ่กว่า
+    clear_spacing = 25.0 
     
-    for layer in layers:
-        n = layer['n']
-        db = layer['db']
-        if n <= 0: continue
+    current_y = 0.0
+    
+    for i, layer in enumerate(layers):
+        n = layer.get('n', 0)
+        db = layer.get('db', 0)
         
-        area = n * (np.pi * (db/2)**2)
-        y_center = current_y_from_bottom + (db/2)
+        if n == 0 or db == 0:
+            continue
+            
+        # พื้นที่เหล็กในชั้นนี้
+        area = n * (math.pi * (db**2) / 4.0)
         
+        # คำนวณระยะ y จากขอบคอนกรีตถึงกึ่งกลางเหล็กชั้นนี้
+        if i == 0:
+            # ชั้นที่ 1: หุ้มคอนกรีต + ปลอก + ครึ่งนึงของเหล็กแกน
+            current_y = cover_mm + stir_db + (db / 2.0)
+        else:
+            # ชั้นที่ 2 ขึ้นไป: ระยะ y ของชั้นก่อนหน้า + ครึ่งเหล็กชั้นก่อนหน้า + clear spacing + ครึ่งเหล็กชั้นนี้
+            prev_db = layers[i-1]['db']
+            y_shift = (prev_db / 2.0) + clear_spacing + (db / 2.0)
+            current_y += y_shift
+            
         total_area += area
-        sum_ay += (area * y_center)
+        sum_area_y += area * current_y
         
-        current_y_from_bottom += db + vertical_spacing
-        
+    # ป้องกัน error กรณีไม่มีการใส่เหล็ก
     if total_area == 0:
         return 0.0, 0.0, 0.0
         
-    y_bar = sum_ay / total_area 
-    d_eff = h - y_bar
+    y_bar = sum_area_y / total_area
+    d = h_mm - y_bar
     
-    return float(d_eff), float(total_area), float(y_bar)
+    return d, total_area, y_bar
 
 def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     """
