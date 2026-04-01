@@ -1,4 +1,4 @@
-#app.py
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -284,7 +284,7 @@ else:
                     with col_input:
                         cover_mm = st.number_input(f"Cover (mm)", 20, 50, 25, key=f"cov_{i}")
 
-                        # 1. Top Steel
+                        # --- 1. UI: รับข้อมูล Top Steel ---
                         st.markdown("#### 🔽 Top Reinforcement (Negative Moment)")
                         num_t_layers = st.selectbox("Top Layers", [1, 2], index=0, key=f"tl_qty_{i}")
                         top_layers = []
@@ -294,13 +294,10 @@ else:
                             with ct2: t_qty = st.number_input(f"L{l_idx+1} No.", 0, 20, 2 if l_idx==0 else 0, key=f"tn_{i}_{l_idx}")
                             top_layers.append({'n': t_qty, 'db': t_db})
                         
-                        d_t_val, as_prov_t, y_centroid_t = rc_design_engine.get_centroid_and_d(top_layers, h_mm, cover_mm, 9)
-                        d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + 9 + 16/2)
-                        phi_Mn_t, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(top_layers, d_t, b_mm, h_mm, fc, fy)
-                        
-                        st.caption(f"**Check Top:** Prov As: {as_prov_t:.0f} mm² | Cap: {phi_Mn_t:.1f} kNm {'✅' if phi_Mn_t >= mu_neg else '❌ (Need More)'}")
+                        # จองพื้นที่แสดงผลลัพธ์ของ Top Steel เอาไว้ก่อน
+                        top_res_ph = st.empty()
 
-                        # 2. Bottom Steel
+                        # --- 2. UI: รับข้อมูล Bottom Steel ---
                         st.markdown("#### 🔼 Bottom Reinforcement (Positive Moment)")
                         num_b_layers = st.selectbox("Bottom Layers", [1, 2], index=0, key=f"bl_qty_{i}")
                         bot_layers = []
@@ -310,25 +307,54 @@ else:
                             with cb2: b_qty = st.number_input(f"L{l_idx+1} No.", 0, 20, 3 if l_idx==0 else 0, key=f"bn_{i}_{l_idx}")
                             bot_layers.append({'n': b_qty, 'db': b_db})
                         
-                        d_b, as_prov_b, _ = rc_design_engine.get_centroid_and_d(bot_layers, h_mm, cover_mm, 9)
-                        if d_b <= 0: d_b = h_mm - (cover_mm + 9 + 16/2)
-                        phi_Mn_b, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(bot_layers, d_b, b_mm, h_mm, fc, fy)
-                        
-                        st.caption(f"**Check Bot:** Prov As: {as_prov_b:.0f} mm² | Cap: {phi_Mn_b:.1f} kNm {'✅' if phi_Mn_b >= mu_pos else '❌ (Need More)'}")
+                        # จองพื้นที่แสดงผลลัพธ์ของ Bottom Steel เอาไว้ก่อน
+                        bot_res_ph = st.empty()
 
-                        # 3. Shear
+                        # --- 3. UI: รับข้อมูล Shear ---
                         st.markdown("#### 🌀 Shear Stirrups")
                         cs1, cs2 = st.columns(2)
                         with cs1: stir_db = st.selectbox("Stirrup Dia", [6, 9, 12], index=1, key=f"sdb_final_{i}")
                         with cs2: stir_s = st.number_input("Spacing @ (mm)", 50, 300, 150, key=f"ss_{i}")
                         
+                        # จองพื้นที่แสดงผลลัพธ์ Shear
+                        shear_res_ph = st.empty()
+
+
+                        # ========================================================
+                        # ประมวลผลลัพธ์ (ทำหลังจากรู้ค่าเหล็กบน, ล่าง, และปลอกทั้งหมดแล้ว)
+                        # ========================================================
+                        
+                        # ประมวลผล Top Steel (รับแรงดึง) / Bot Steel (รับแรงอัด)
+                        d_t_val, as_prov_t, y_centroid_t = rc_design_engine.get_centroid_and_d(top_layers, h_mm, cover_mm, stir_db)
+                        # ถ้าไม่มีเหล็ก ใส่ดักไว้กันพัง
+                        d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + stir_db + 16/2)
+                        
+                        phi_Mn_t, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(
+                            top_layers, bot_layers, b_mm, h_mm, fc, fy, cover_mm, stir_db
+                        )
+                        # ใส่ผลลัพธ์กลับเข้าไปในพื้นที่ที่จองไว้
+                        top_res_ph.caption(f"**Check Top:** Prov As: {as_prov_t:.0f} mm² | Cap: {phi_Mn_t:.1f} kNm {'✅' if phi_Mn_t >= mu_neg else '❌ (Need More)'}")
+
+                        
+                        # ประมวลผล Bottom Steel (รับแรงดึง) / Top Steel (รับแรงอัด)
+                        d_b_val, as_prov_b, y_centroid_b = rc_design_engine.get_centroid_and_d(bot_layers, h_mm, cover_mm, stir_db)
+                        d_b = h_mm - y_centroid_b if y_centroid_b > 0 else h_mm - (cover_mm + stir_db + 16/2)
+                        
+                        phi_Mn_b, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(
+                            bot_layers, top_layers, b_mm, h_mm, fc, fy, cover_mm, stir_db
+                        )
+                        # ใส่ผลลัพธ์กลับเข้าไปในพื้นที่ที่จองไว้
+                        bot_res_ph.caption(f"**Check Bot:** Prov As: {as_prov_b:.0f} mm² | Cap: {phi_Mn_b:.1f} kNm {'✅' if phi_Mn_b >= mu_pos else '❌ (Need More)'}")
+
+
+                        # ประมวลผล Shear
                         status_v, phi_Vn, _, _, _, _ = rc_design_engine.check_shear_details(vu_max, b_mm, d_b, fc, fy, stir_db, stir_s)
                         if phi_Vn < vu_max: 
-                            st.error(f"❌ Shear Fail: {phi_Vn:.1f} < {vu_max:.1f} kN")
+                            shear_res_ph.error(f"❌ Shear Fail: {phi_Vn:.1f} < {vu_max:.1f} kN")
                         else: 
-                            st.success(f"✅ Shear OK: {phi_Vn:.1f} ≥ {vu_max:.1f} kN")
+                            shear_res_ph.success(f"✅ Shear OK: {phi_Vn:.1f} ≥ {vu_max:.1f} kN")
 
-                        # 4. Serviceability Checks
+                        # --- 4. Serviceability Checks ---
                         st.markdown("---")
                         d_inst, d_long, Ie, Icr, lambda_d = rc_design_engine.check_serviceability(
                             ma_pos_svc, delta_elastic_mm, b_mm, h_mm, d_b, as_prov_b, as_prov_t, fc
