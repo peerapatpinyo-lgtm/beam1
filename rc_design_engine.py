@@ -90,108 +90,125 @@ def get_as_req(Mu_kNm, d_eff_mm, fc, fy, b_mm):
     
     return float(as_final), float(rho), False, details
 
-def get_phi_Mn_details_multi(bot_layers, top_layers, b, h, fc, fy, cover, stir_db):
+def get_phi_Mn_details_multi(bot_layers, top_layers, b, h, fc, fy, cover, stir_db, is_top_tension=False):
     """
-    [UPGRADED] คำนวณ Moment Capacity (Phi Mn) เชิงลึก 
-    รองรับ: เหล็กหลายชั้น (Multiple Layers), คานเสริมเหล็กคู่ (Doubly Reinforced), 
-    ตรวจสอบการครากเหล็กอัด (Yield Check) และใช้ dt ในการหาค่า Phi
+    [ULTRA-UPGRADED] Strain Compatibility Method (Iterative Bisection)
+    วิเคราะห์เหล็กทีละชั้นอย่างละเอียด หาแกนสะเทิน (c) ที่ C = T ตรงตาม ACI 318
+    is_top_tension:
+      False = โมเมนต์บวก (ล่างดึง-บนอัด) -> เหล็กล่าง=Tension, เหล็กบน=Compression
+      True  = โมเมนต์ลบ (บนดึง-ล่างอัด) -> เหล็กบน=Tension, เหล็กล่าง=Compression
     """
     Es = 200000.0
     eps_cu = 0.003
-    eps_y = fy / Es
     beta1 = get_beta1(fc)
-
-    # 1. คำนวณฝั่งเหล็กรับแรงดึง (Tension Steel)
-    As = 0.0
-    sum_ay_bot = 0.0
-    current_y_bot = cover + stir_db
-    dt = 0.0 # ความลึกเหล็กชั้นนอกสุด
     
-    for i, layer in enumerate(bot_layers):
-        n = layer.get('n', 0)
-        db = layer.get('db', 0)
-        if n <= 0: continue
-        
-        area = n * (np.pi * (db/2)**2)
-        y_center = current_y_bot + (db/2)
-        
-        if i == 0:
-            dt = h - y_center # เหล็กชั้นล่างสุด (ไกลสุดจากขอบบน)
-            
-        As += area
-        sum_ay_bot += (area * y_center)
-        current_y_bot += db + 25.0 
-
-    if As == 0:
-        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-
-    y_bar_bot = sum_ay_bot / As
-    d = h - y_bar_bot 
-
-    # 2. คำนวณฝั่งเหล็กรับแรงอัด (Compression Steel)
-    As_prime = 0.0
-    sum_ay_top = 0.0
-    current_y_top = cover + stir_db
+    # 1. จัดกลุ่มเหล็กทั้งหมด (All Bars) ให้อยู่ในระบบพิกัดเดียวกัน
+    # ให้ y = 0 เริ่มที่ขอบ "รับแรงอัดสูงสุด" (Compression Face)
+    # y = ระยะความลึกจากขอบอัดถึงจุดศูนย์กลางเหล็กเส้น (d_i)
     
-    if top_layers:
-        for layer in top_layers:
+    all_bars = []
+    
+    def add_bars(layers, is_bottom_bars):
+        current_spacing = cover + stir_db
+        for layer in layers:
             n = layer.get('n', 0)
             db = layer.get('db', 0)
-            if n <= 0: continue
-            
-            area = n * (np.pi * (db/2)**2)
-            y_center = current_y_top + (db/2)
-            
-            As_prime += area
-            sum_ay_top += (area * y_center)
-            current_y_top += db + 25.0
-
-    d_prime = sum_ay_top / As_prime if As_prime > 0 else 0.0
-
-    # 3. คำนวณแกนสะเทิน (c) และตรวจสอบการคราก
-    if As_prime == 0:
-        a = (As * fy) / (0.85 * fc * b)
-        c = a / beta1
-        fs_prime = 0.0
-    else:
-        a_assume = ((As - As_prime) * fy) / (0.85 * fc * b)
-        if a_assume <= 0: a_assume = 0.001 
-        
-        c_assume = a_assume / beta1
-        eps_s_prime = eps_cu * (c_assume - d_prime) / c_assume if c_assume > 0 else 0
-
-        if eps_s_prime >= eps_y:
-            c = c_assume
-            a = a_assume
-            fs_prime = fy
-        else:
-            A_quad = 0.85 * fc * beta1 * b
-            B_quad = eps_cu * Es * As_prime - As * fy
-            C_quad = -eps_cu * Es * As_prime * d_prime
-            
-            discriminant = B_quad**2 - 4 * A_quad * C_quad
-            
-            if discriminant >= 0:
-                c = (-B_quad + np.sqrt(discriminant)) / (2 * A_quad)
-            else:
-                c = 0.001
+            if n > 0 and db > 0:
+                area = n * (np.pi * (db / 2)**2)
                 
-            a = beta1 * c
-            fs_prime = Es * eps_cu * (c - d_prime) / c if c > 0 else 0.0
+                if not is_top_tension:
+                    # โมเมนต์บวก: ขอบอัดอยู่ด้านบน
+                    if is_bottom_bars:
+                        y_depth = h - (current_spacing + db/2) # ล่าง=ดึง (ลึกจากขอบบน)
+                    else:
+                        y_depth = current_spacing + db/2     # บน=อัด (ใกล้ขอบบน)
+                else:
+                    # โมเมนต์ลบ: ขอบอัดอยู่ด้านล่าง
+                    if is_bottom_bars:
+                        y_depth = current_spacing + db/2     # ล่าง=อัด (ใกล้ขอบล่าง)
+                    else:
+                        y_depth = h - (current_spacing + db/2) # บน=ดึง (ลึกจากขอบล่าง)
 
-    if c <= 0:
-        return 0.0, float(As), 0.0, 0.0, 0.0, 0.0
+                all_bars.append({'area': area, 'd_i': y_depth})
+                current_spacing += db + 25.0 # สมมติ clear spacing 25mm
 
-    # 4. คำนวณกำลังต้านทานโมเมนต์ (Mn)
+    add_bars(bot_layers, is_bottom_bars=True)
+    add_bars(top_layers, is_bottom_bars=False)
+    
+    if not all_bars:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, []
+
+    # หา dt (ความลึกของเหล็กรับแรงดึงชั้นนอกสุด)
+    dt = max(bar['d_i'] for bar in all_bars)
+    total_tension_As = sum(bar['area'] for bar in all_bars if bar['d_i'] > h/2) # ประมาณการ
+
+    # 2. Bisection Method ค้นหาแกนสะเทิน 'c'
+    c_low = 0.001
+    c_high = h
+    c = 0.001
+    tolerance = 1.0 # ยอมให้แรงต่างกันไม่เกิน 1 Newton
+    
+    for _ in range(100): # วนหา 100 รอบ (เกินพอ)
+        c = (c_low + c_high) / 2.0
+        a = beta1 * c
+        
+        # แรงอัดคอนกรีต
+        Cc = 0.85 * fc * a * b
+        
+        # แรงจากเหล็ก (บวก=ดึง, ลบ=อัด)
+        Force_s = 0.0
+        for bar in all_bars:
+            eps_s = eps_cu * (bar['d_i'] - c) / c
+            fs = max(-fy, min(fy, eps_s * Es))
+            Force_s += bar['area'] * fs
+            
+        # ตรวจสอบสมดุลแรง
+        # แรงรวม = แรงดึงรวม (Force_s ที่เป็นบวก) - แรงอัดคอนกรีต (Cc) + แรงอัดเหล็ก (Force_s ที่เป็นลบ)
+        # เนื่องจากเรานิยาม แรงดึง = บวก, แรงอัด = ลบ
+        # ดังนั้น Cc ต้องมีเครื่องหมายลบ เพื่อสู้กับแรงดึง
+        Net_Force = Force_s - Cc 
+        
+        if abs(Net_Force) < tolerance:
+            break
+            
+        if Net_Force > 0:
+            # แรงดึงชนะแรงอัด -> ต้องเพิ่มพื้นที่แรงอัด -> เลื่อน c ลงมาลึกขึ้น
+            c_low = c
+        else:
+            # แรงอัดชนะแรงดึง -> ต้องลดพื้นที่แรงอัด -> เลื่อน c ขึ้นไป
+            c_high = c
+
+    # 3. คำนวณ Moment Capacity (Mn) ที่แท้จริง รอบ Neutral Axis (หรือรอบแกนใดก็ได้)
+    # เราจะ Take Moment รอบขอบรับแรงอัดสูงสุด (Top Fiber / Bottom Fiber แล้วแต่กรณี)
+    a = beta1 * c
     Cc = 0.85 * fc * a * b
-    Cs = As_prime * fs_prime
     
-    Mn_Nmm = Cc * (d - a/2) + Cs * (d - d_prime)
-    Mn_kNm = Mn_Nmm / 1e6
+    Mn_Nmm = 0.0
+    Mn_Nmm += Cc * (a / 2) # โมเมนต์จากคอนกรีต (ทวนเข็ม เป็นบวก)
+    
+    layer_results = []
+    
+    for i, bar in enumerate(sorted(all_bars, key=lambda x: x['d_i'])):
+        eps_s = eps_cu * (bar['d_i'] - c) / c
+        fs = max(-fy, min(fy, eps_s * Es))
+        Force = bar['area'] * fs
+        
+        # โมเมนต์จากเหล็ก (เหล็กดึง fs เป็นบวก, แขนเป็นบวก -> โมเมนต์ทวนเข็ม)
+        Mn_Nmm += Force * bar['d_i'] 
+        
+        layer_results.append({
+            'layer_idx': i + 1,
+            'd_i': bar['d_i'],
+            'area': bar['area'],
+            'eps_s': eps_s,
+            'fs': fs,
+            'is_yielded': abs(fs) >= fy,
+            'type': "Tension" if fs > 0 else "Compression"
+        })
 
-    # 5. หาตัวคูณลดกำลัง Phi (โดยใช้ dt ของชั้นนอกสุด)
-    if dt == 0: dt = d 
+    Mn_kNm = Mn_Nmm / 1e6
     
+    # 4. หาตัวคูณลดกำลัง Phi (ใช้ dt ของเหล็กดึงนอกสุด)
     eps_t = eps_cu * (dt - c) / c if c > 0 else 999.0
 
     if eps_t >= 0.005:
@@ -203,7 +220,7 @@ def get_phi_Mn_details_multi(bot_layers, top_layers, b, h, fc, fy, cover, stir_d
 
     phi_Mn = phi * Mn_kNm
 
-    return float(phi_Mn), float(As), float(a), float(Mn_kNm), float(c), float(eps_t)
+    return float(phi_Mn), float(total_tension_As), float(a), float(Mn_kNm), float(c), float(eps_t), layer_results
 
 def check_shear_details(Vu_kN, b, d, fc, fy, stir_db, spacing):
     """
