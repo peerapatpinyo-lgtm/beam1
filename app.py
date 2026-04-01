@@ -329,9 +329,9 @@ else:
                         # ถ้าไม่มีเหล็ก ใส่ดักไว้กันพัง
                         d_t = h_mm - y_centroid_t if y_centroid_t > 0 else h_mm - (cover_mm + stir_db + 16/2)
                         
-                        phi_Mn_t, _, _, _, _, _ = rc_design_engine.get_phi_Mn_details_multi(
-                            top_layers, bot_layers, b_mm, h_mm, fc, fy, cover_mm, stir_db
-                        )
+                        phi_Mn_t, *_ = rc_design_engine.get_phi_Mn_details_multi(
+                            bot_layers, top_layers, b, h, fc, fy, cover, stir_db, is_top_tension=True
+                            )
                         # ใส่ผลลัพธ์กลับเข้าไปในพื้นที่ที่จองไว้
                         top_res_ph.caption(f"**Check Top:** Prov As: {as_prov_t:.0f} mm² | Cap: {phi_Mn_t:.1f} kNm {'✅' if phi_Mn_t >= mu_neg else '❌ (Need More)'}")
 
