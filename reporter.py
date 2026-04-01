@@ -72,7 +72,51 @@ def render_calculation_report(res):
         st.latex(rf"\text{{Section (b }} \times \text{{ h): }} {b:.0f} \times {h:.0f} \text{{ mm}}")
 
     st.divider()
+# =========================================================
+    # 1.1 MINIMUM BEAM DEPTH CHECK (ACI 318-19 Table 9.3.1.1)
+    # =========================================================
+    st.markdown("### 1.1 Minimum Beam Depth Check ($h_{min}$)")
+    
+    L_mm = L_m * 1000
+    
+    # ACI 318-19 Table 9.3.1.1: fy modification factor
+    # ถ้า fy = 420 MPa ตัวคูณนี้จะมีค่าเท่ากับ 1.0 พอดี
+    fy_modifier = 0.4 + (fy / 700)
+    
+    # ดึงข้อมูลประเภทของช่วงคาน (ถ้าไม่มีให้ตั้งค่าเริ่มต้นเป็นคานต่อเนื่องสองข้าง)
+    span_type = res.get('span_condition', 'Continuous (Both Ends)')
+    
+    # คำนวณ h_min ตามสภาพจุดรองรับ
+    if span_type == 'Simply Supported':
+        denom = 16
+    elif span_type == 'Continuous (One End)':
+        denom = 18.5
+    elif span_type == 'Continuous (Both Ends)':
+        denom = 21
+    elif span_type == 'Cantilever':
+        denom = 8
+    else:
+        denom = 21 # Default fallback
+        
+    h_min_req = (L_mm / denom) * fy_modifier
+    
+    st.write(f"**Span Condition:** {span_type}")
+    
+    # แสดงสมการ
+    st.latex(rf"h_{{min}} = \frac{{L}}{{{denom}}} \left( 0.4 + \frac{{f_y}}{{700}} \right)")
+    st.latex(rf"h_{{min}} = \frac{{{L_mm:.0f}}}{{{denom}}} \left( 0.4 + \frac{{{fy}}}{{700}} \right) = \mathbf{{{h_min_req:.1f}}} \text{{ mm}}")
+    
+    # สรุปผลการตรวจสอบเทียบกับความลึกคานจริง (h)
+    hc1, hc2, hc3 = st.columns(3)
+    hc1.metric("Provided Depth ($h$)", f"{h:.0f} mm")
+    hc2.metric("Minimum Required ($h_{min}$)", f"{h_min_req:.1f} mm")
+    
+    if h >= h_min_req:
+        hc3.success("✅ STATUS: PASS (Deflection check not strictly required)")
+    else:
+        hc3.warning("⚠️ STATUS: FAIL (Calculate exact deflection per ACI 24.2)")
 
+    st.divider()
     # =========================================================
     # HELPER FUNCTION FOR FLEXURAL AUDIT (UPGRADED TO STRAIN COMPATIBILITY)
     # =========================================================
