@@ -1,7 +1,7 @@
 # reporter.py
 import streamlit as st
 import numpy as np
-from rc_design_engine import get_phi_Mn_details_multi # <--- นำเข้าฟังก์ชันที่อัปเกรดแล้ว
+from rc_design_engine import get_phi_Mn_details_multi
 import section_plotter
 
 def render_calculation_report(res):
@@ -56,50 +56,6 @@ def render_calculation_report(res):
     st.markdown(rf"## 🏛️ Comprehensive ACI 318-19 Design Audit: Span {idx}")
     st.markdown(rf"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
     st.divider()
-
-    # =========================================================
-    # 📊 UPGRADED: Stress-Strain & Equivalent Rectangular Block
-    # =========================================================
-    st.markdown("### 📊 Equivalent Rectangular Concrete Stress Distribution (Whitney)")
-    
-    # ดึงค่าพารามิเตอร์อย่างปลอดภัย (ป้องกัน Error กรณีหน้าตัดไม่มีโมเมนต์)
-    c_val = res.get('c', 0)
-    a_val = res.get('a', 0)
-    d_val = res.get('d_b', res.get('d', h - cov - stir_db - 12)) # Fallback d_b
-    
-    if c_val > 0 and a_val > 0:
-        # แบ่งหน้าจอเป็น 2 ฝั่ง ซ้ายแสดงสมการ ขวาแสดงกราฟ
-        col_math, col_plot = st.columns([1.2, 1]) 
-        
-        with col_math:
-            st.markdown("**1. Neutral Axis & Stress Block Depth**")
-            st.latex(rf"c = \mathbf{{{c_val:.2f}}} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
-            st.latex(rf"a = \beta_1 c = {beta1:.3f}({c_val:.2f}) = \mathbf{{{a_val:.2f}}} \text{{ mm}}")
-            
-            st.markdown("**2. Internal Compression Force ($C_c$) & Lever Arm**")
-            # คำนวณแรงอัดคอนกรีตล้วนๆ (Cc)
-            Cc_kN = (0.85 * fc * a_val * b) / 1000 
-            # คำนวณแขนโมเมนต์โดยประมาณ (จากผิวถึงกึ่งกลางเหล็กรับแรงดึง)
-            lever_arm = d_val - (a_val / 2)
-            
-            st.latex(rf"C_c = 0.85 f'_c a b = 0.85({fc})({a_val:.2f})({b:.0f}) \times 10^{{-3}}")
-            st.latex(rf"C_c = \mathbf{{{Cc_kN:.1f}}} \text{{ kN}}")
-            st.latex(rf"\text{{Lever Arm }} (jd) = d - \frac{{a}}{{2}} = \mathbf{{{lever_arm:.1f}}} \text{{ mm}}")
-            
-            st.caption("💡 *Note: The basic $C_c$ above represents pure concrete compression. For exact nominal moment capacity considering multiple reinforcement layers and compressive steel forces, refer to the detailed Flexural Capacity Audit section below.*")
-
-        with col_plot:
-            # ใส่ try-except ครอบไว้ เผื่อฟังก์ชันใน section_plotter มีปัญหา แอปจะได้ไม่พัง
-            try:
-                fig_stress = section_plotter.plot_stress_strain_diagram(
-                    b=b, h=h, d=d_val, c=c_val, a=a_val, fc=fc
-                )
-                st.pyplot(fig_stress, use_container_width=True)
-            except Exception as e:
-                st.error(f"⚠️ Diagram rendering failed: {e}")
-                
-    else:
-        st.info("ℹ️ Stress-Strain diagram is not generated because neutral axis ($c$) data is missing (e.g., zero moment demand).")
 
     # =========================================================
     # 1. MATERIAL & SECTION PROPERTIES
@@ -238,7 +194,7 @@ def render_calculation_report(res):
             st.error(rf"❌ Check: Provided $A_s$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
 
         # ==========================================
-        # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS
+        # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS WITH PLOT
         # ==========================================
         st.markdown("**3. Strain Compatibility & Stress Block (Iterative Method)**")
         
@@ -247,18 +203,32 @@ def render_calculation_report(res):
             all_bot_layers, all_top_layers, b, h, fc, fy, cov, stir_db, is_top_tension=is_top
         )
 
-        st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
-        st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
+        col_math, col_plot = st.columns([1.1, 1])
         
-        st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
-        for res in layer_res:
-            # ตกแต่ง UI ไอคอน
-            if res['type'] == 'Tension':
-                status = "🟢 Yielded" if res['is_yielded'] else "🟡 Elastic"
-                st.write(f"- **Bar @ $d$ = {res['d_i']:.1f} mm** ({res['type']}): $\epsilon_s$ = {res['eps_s']:.5f} | $f_s$ = {res['fs']:.1f} MPa | {status}")
-            else:
-                status = "🔴 Yielded (Comp)" if res['is_yielded'] else "⚪ Elastic (Comp)"
-                st.write(f"- **Bar @ $d'$ = {res['d_i']:.1f} mm** ({res['type']}): $\epsilon_s$ = {res['eps_s']:.5f} | $f_s$ = {res['fs']:.1f} MPa | {status}")
+        with col_math:
+            st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
+            st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
+            
+            st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
+            for lay_res in layer_res:
+                # ตกแต่ง UI ไอคอน
+                if lay_res['type'] == 'Tension':
+                    status = "🟢 Yielded" if lay_res['is_yielded'] else "🟡 Elastic"
+                    st.write(f"- **Bar @ $d$ = {lay_res['d_i']:.1f} mm** ({lay_res['type']}): $\epsilon_s$ = {lay_res['eps_s']:.5f} | $f_s$ = {lay_res['fs']:.1f} MPa | {status}")
+                else:
+                    status = "🔴 Yielded (Comp)" if lay_res['is_yielded'] else "⚪ Elastic (Comp)"
+                    st.write(f"- **Bar @ $d'$ = {lay_res['d_i']:.1f} mm** ({lay_res['type']}): $\epsilon_s$ = {lay_res['eps_s']:.5f} | $f_s$ = {lay_res['fs']:.1f} MPa | {status}")
+
+        with col_plot:
+            # วาดรูป Stress-Strain ตามสภาวะที่กำลังคำนวณอยู่
+            if c_val > 0 and a_val > 0:
+                try:
+                    fig_stress = section_plotter.plot_stress_strain_diagram(
+                        b=b, h=h, d=d_eff, c=c_val, a=a_val, fc=fc
+                    )
+                    st.pyplot(fig_stress, use_container_width=True)
+                except Exception as e:
+                    st.error(f"⚠️ Diagram rendering failed: {e}")
 
         # --- Ultimate Strength Limit State ---
         st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$)**")
