@@ -223,10 +223,6 @@ def render_calculation_report(res):
         )
 
 
-        col_math, col_plot = st.columns([1, 1.5])
-        
-        with col_math:
-
         st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
         st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
 
