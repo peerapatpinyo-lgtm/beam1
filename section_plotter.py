@@ -4,9 +4,6 @@ import io
 import numpy as np
 import textwrap
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import numpy as np
 
 def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     """
