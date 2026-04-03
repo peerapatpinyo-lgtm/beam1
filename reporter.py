@@ -448,6 +448,7 @@ def render_calculation_report(res):
         
         st.divider()
 
+
         # --- 4.2 Crack Width ---
         st.markdown("#### 4.2 Crack Width Control (Gergely-Lutz)")
         
@@ -464,11 +465,12 @@ def render_calculation_report(res):
             bot_n_total = sum(layer['n'] for layer in valid_bot_layers) if valid_bot_layers else 1
             A_eff = (2 * dc * b) / bot_n_total if bot_n_total > 0 else 0
             
-            w_val = 0.076 * 1.2 * fs * np.cbrt(dc * A_eff) * 1e-3
+            # 🛠️ FIXED: Corrected Gergely-Lutz constant for SI Units (11e-6 instead of 0.076e-3)
+            w_val = 11e-6 * 1.2 * fs * np.cbrt(dc * A_eff)
             
-            st.markdown("Based on Gergely-Lutz equation (Modified for SI):")
-            st.latex(rf"w = 0.076 \beta f_s \sqrt[3]{{d_c A}}")
-            st.latex(rf"w \approx 0.076 (1.2) ({fs:.0f}) \sqrt[3]{{{dc:.1f} \times {A_eff:.1f}}} \times 10^{{-3}} = \mathbf{{{w_val:.3f}}}\text{{ mm}}")
+            st.markdown("Based on Gergely-Lutz equation (Modified for SI Units):")
+            st.latex(rf"w = 11 \times 10^{{-6}} \beta f_s \sqrt[3]{{d_c A}}")
+            st.latex(rf"w \approx 11 \times 10^{{-6}} (1.2) ({fs:.0f}) \sqrt[3]{{{dc:.1f} \times {A_eff:.1f}}} = \mathbf{{{w_val:.3f}}}\text{{ mm}}")
                 
             if w_val > w_lim:
                  st.error(rf"⚠️ Crack width ({w_val:.3f} mm) exceeds limit ({w_lim} mm). Recommend using smaller bar diameter with closer spacing.")
