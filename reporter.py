@@ -2,6 +2,7 @@
 import streamlit as st
 import numpy as np
 from rc_design_engine import get_phi_Mn_details_multi # <--- นำเข้าฟังก์ชันที่อัปเกรดแล้ว
+import section_plotter
 
 def render_calculation_report(res):
     """
@@ -56,6 +57,21 @@ def render_calculation_report(res):
     st.markdown(rf"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
     st.divider()
 
+
+
+    st.markdown("---")
+    st.markdown("#### 📊 Stress-Strain & Equivalent Rectangular Block")
+    
+    # เรียกฟังก์ชันวาดรูป โดยดึงค่าจากดิกชันนารี res ที่ส่งมาจาก app.py
+    fig_stress = section_plotter.plot_stress_strain_diagram(
+        b=res['b'], 
+        h=res['h'], 
+        d=res['d_b'], 
+        c=res['c'], 
+        a=res['a'], 
+        fc=res['fc']
+    )
+    st.pyplot(fig_stress)
     # =========================================================
     # 1. MATERIAL & SECTION PROPERTIES
     # =========================================================
