@@ -4,6 +4,45 @@ import io
 import numpy as np
 import textwrap
 
+
+def plot_stress_strain_diagram(b, h, d, c, a, fc):
+    """Generate a Matplotlib figure for Strain and Stress Block"""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 4), sharey=True)
+    
+    # --- 1. Strain Profile (ax1) ---
+    ax1.plot([0, 0], [0, h], color='black', linewidth=1)
+    ax1.plot([0.003, -0.005], [h, h-d], color='blue', marker='o')
+    ax1.plot([0, 0.003], [h, h], color='blue', linestyle='--')
+    ax1.plot([0, -0.005], [h-d, h-d], color='blue', linestyle='--')
+    
+    # Neutral Axis (N.A.)
+    ax1.axhline(y=h-c, color='red', linestyle='-.', alpha=0.5)
+    ax1.text(0, h-c, f' N.A. (c={c:.1f} mm)', color='red', va='bottom')
+    ax1.text(0.003, h, ' εc=0.003', color='blue', va='bottom')
+    
+    ax1.set_title("Strain Profile")
+    ax1.axis('off')
+    
+    # --- 2. Stress Block (ax2) ---
+    ax2.plot([0, 0], [0, h], color='black', linewidth=1)
+    
+    # Whitney Stress Block (0.85fc')
+    stress_val = 0.85 * fc
+    rect = patches.Rectangle((0, h-a), stress_val, a, linewidth=1.5, edgecolor='#c0392b', facecolor='#e74c3c', alpha=0.5)
+    ax2.add_patch(rect)
+    
+    # Tension & Compression arrows
+    ax2.annotate('', xy=(stress_val, h-d), xytext=(0, h-d), arrowprops=dict(arrowstyle="->", color="green", lw=2))
+    ax2.text(stress_val, h-d, ' Ts', color='green', va='center')
+    ax2.annotate('', xy=(-stress_val/2, h-(a/2)), xytext=(0, h-(a/2)), arrowprops=dict(arrowstyle="<-", color="red", lw=2))
+    ax2.text(-stress_val/2, h-(a/2), ' Cc', color='red', va='center', ha='right')
+    
+    ax2.set_title("Equivalent Stress Block")
+    ax2.axis('off')
+    
+    plt.tight_layout()
+    return fig
+
 def auto_arrange_bars(total_n, db, b, cover, stir_db):
     """
     [NEW] คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
