@@ -222,54 +222,67 @@ def render_calculation_report(res):
             all_bot_layers, all_top_layers, b, h, fc, fy, cov, stir_db, is_top_tension=is_top
         )
 
-        col_math, col_plot = st.columns([1, 1.5]) # ปรับสัดส่วนให้รูปใหญ่ขึ้นนิดนึง
 
+        col_math, col_plot = st.columns([1, 1.5])
+        
         with col_math:
-            st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
+            st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis)}}")
             st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
             
-            # --- แก้ไขส่วนแสดงผล eps_s และ fs แบบกระจายสมการ ---
-            st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
-            st.latex(r"\epsilon_s = 0.003 \left( \frac{d_i - c}{c} \right), \quad f_s = \epsilon_s E_s")
-            
-            for lay_res in layer_res:
-                di = lay_res['d_i']
-                eps_s = lay_res['eps_s']
-                fs = lay_res['fs']
-                is_yield = lay_res['is_yielded']
-                l_type = lay_res['type']
+            # --- กรองเฉพาะเหล็กรับแรงอัด (Compression) ให้อยู่ฝั่งซ้าย ---
+            comp_layers = [ly for ly in layer_res if ly['type'] == 'Compression']
+            if comp_layers:
+                st.markdown("**เหล็กรับแรงอัด (Compression):**")
+                st.latex(r"\epsilon_s = 0.003 \left( \frac{c - d_i}{c} \right)")
                 
-                # กำหนดสถานะและสี
-                if l_type == 'Tension':
-                    status = "🟢 Yielded" if is_yield else "🟡 Elastic"
-                else:
+                for lay_res in comp_layers:
+                    di = lay_res['d_i']
+                    eps_s = abs(lay_res['eps_s']) # ใส่ abs เพื่อให้แสดงค่าบวกในสมการ
+                    fs = abs(lay_res['fs'])
+                    is_yield = lay_res['is_yielded']
+                    
                     status = "🔴 Yielded" if is_yield else "⚪ Elastic"
-                
-                st.markdown(f"- **Layer @ $d_i = {di:.1f}$ mm ({l_type}):**")
-                
-                # แสดงสมการแทนค่าความเครียด (eps_s)
-                st.latex(rf"\epsilon_s = 0.003 \times \frac{{{di:.1f} - {c_val:.2f}}}{{{c_val:.2f}}} = {eps_s:.5f}")
-                
-                # แสดงสมการแทนค่าหน่วยแรง (fs) และเช็ค Yield
-                fs_calc = eps_s * Es
-                if is_yield:
-                    # ถ้าค่าคำนวณเกิน fy ให้โชว์ว่าถูกตัดจบที่ fy
-                    st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \text{{ MPa}} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
-                else:
-                    # ถ้ายังไม่เกิน fy ก็ใช้ค่าที่คำนวณได้เลย
-                    st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
-        
+                    st.markdown(f"- **Layer @ $d'_i = {di:.1f}$ mm:**")
+                    st.latex(rf"\epsilon_s = 0.003 \times \frac{{{c_val:.2f} - {di:.1f}}}{{{c_val:.2f}}} = {eps_s:.5f}")
+                    
+                    fs_calc = eps_s * Es
+                    if is_yield:
+                        st.latex(rf"f'_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+                    else:
+                        st.latex(rf"f'_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+
         with col_plot:
-            # ⬇️ เปลี่ยนมาเรียกใช้ฟังก์ชันใหม่ที่นี่ครับ ⬇️
+            # 1. วาดรูปกราฟิกก่อน
             if c_val > 0 and a_val > 0:
                 try:
-                    # ส่ง layer_res เข้าไปเพื่อให้กราฟวาดรายละเอียดของแต่ละ Layer ได้
                     fig_stress = section_plotter.plot_detailed_stress_strain(
                         b=b, h=h, c=c_val, a=a_val, fc=fc, layer_res=layer_res, is_top=is_top
                     )
                     st.pyplot(fig_stress, use_container_width=True)
                 except Exception as e:
                     st.error(f"⚠️ Diagram rendering failed: {e}")
+            
+            # 2. นำเหล็กรับแรงดึง (Tension) มาต่อด้านล่างรูปภาพ
+            tens_layers = [ly for ly in layer_res if ly['type'] == 'Tension']
+            if tens_layers:
+                st.markdown("**เหล็กรับแรงดึง (Tension):**")
+                st.latex(r"\epsilon_s = 0.003 \left( \frac{d_i - c}{c} \right)")
+                
+                for lay_res in tens_layers:
+                    di = lay_res['d_i']
+                    eps_s = lay_res['eps_s']
+                    fs = lay_res['fs']
+                    is_yield = lay_res['is_yielded']
+                    
+                    status = "🟢 Yielded" if is_yield else "🟡 Elastic"
+                    st.markdown(f"- **Layer @ $d_i = {di:.1f}$ mm:**")
+                    st.latex(rf"\epsilon_s = 0.003 \times \frac{{{di:.1f} - {c_val:.2f}}}{{{c_val:.2f}}} = {eps_s:.5f}")
+                    
+                    fs_calc = eps_s * Es
+                    if is_yield:
+                        st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+                    else:
+                        st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
 
 # --- Ultimate Strength Limit State ---
         st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$) & Exact Moment Summation**")
