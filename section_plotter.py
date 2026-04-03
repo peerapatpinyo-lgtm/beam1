@@ -4,6 +4,7 @@ import io
 import numpy as np
 import textwrap
 
+
 def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     """
     วาดกราฟแบบละเอียด 3 ส่วน: Cross Section, Strain Profile, และ Stress Profile
@@ -45,7 +46,7 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     # วาดรูปสามเหลี่ยม Strain ฝั่งคอนกรีต
     ax2.plot([0, eps_c*1000], [na_y, h], 'b-', lw=1.5)
     ax2.plot([0, eps_c*1000], [h, h], 'b-', lw=1.5)
-    ax2.text(eps_c*1000/2, h + 0.03*h, f"$\epsilon_c=0.003$", ha='center', fontsize=9, color='blue')
+    ax2.text(eps_c*1000/2, h + 0.03*h, "$\epsilon_c=0.003$", ha='center', fontsize=9, color='blue')
 
     # วาด Strain ฝั่งเหล็กเสริม
     for lr in layer_res:
@@ -55,9 +56,14 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         # กลับด้านกราฟ: Tension (ดึง) ไปทางซ้าย, Compression (อัด) ไปทางขวา
         x_val = -eps_s * 1000 if lr['type'] == 'Tension' else eps_s * 1000
         
-        ax2.plot([0, x_val], [y, y], 'r--' if lr['type']=='Tension' else 'b--', alpha=0.5)
-        ax2.plot([0, x_val], [na_y, y], 'r-', lw=1.5 if lr['type']=='Tension' else 'b-')
-        ax2.text(x_val, y - 0.04*h, f"$\epsilon_s$={eps_s:.4f}", ha='center', fontsize=9, color='red' if lr['type']=='Tension' else 'blue')
+        # แก้ไขการกำหนด Style เส้นตรงนี้ 
+        fmt_dash = 'r--' if lr['type'] == 'Tension' else 'b--'
+        fmt_solid = 'r-' if lr['type'] == 'Tension' else 'b-'
+        txt_color = 'red' if lr['type'] == 'Tension' else 'blue'
+        
+        ax2.plot([0, x_val], [y, y], fmt_dash, alpha=0.5)
+        ax2.plot([0, x_val], [na_y, y], fmt_solid, lw=1.5)
+        ax2.text(x_val, y - 0.04*h, f"$\epsilon_s$={eps_s:.4f}", ha='center', fontsize=9, color=txt_color)
 
     # ---------------------------------------------
     # 3. Stress Profile (การกระจายหน่วยแรง)
@@ -72,7 +78,7 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     ax3.plot([1, 1], [h-a, h], 'b-', lw=1.5)
     ax3.plot([0, 1], [h-a, h-a], 'b-', lw=1.5)
     
-    ax3.text(0.5, h + 0.03*h, f"0.85f'c", ha='center', fontsize=9, color='blue')
+    ax3.text(0.5, h + 0.03*h, "0.85f'c", ha='center', fontsize=9, color='blue')
     ax3.text(1.1, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='blue')
     ax3.text(-0.1, h - c, f"c={c:.1f}", va='center', ha='right', fontsize=9)
 
@@ -93,6 +99,7 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
 
     plt.tight_layout()
     return fig
+
 
 def auto_arrange_bars(total_n, db, b, cover, stir_db):
     """
