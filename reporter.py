@@ -191,30 +191,52 @@ def render_calculation_report(res):
             return 0, 0
        
 
-        # --- Required Steel Calculation (Basic Approx) ---
+        # --- Required Steel Calculation (Detailed) ---
         st.markdown("**2. Required Reinforcement ($A_{s,req}$)**")
         Mu_calc = abs(Mu) * 1e6
         phi_flex = 0.9
         
-        Rn = Mu_calc / (phi_flex * b * d_eff**2) if d_eff > 0 else 0
-        term_inside = 1 - (2 * Rn) / (0.85 * fc)
-        rho_req = (0.85 * fc / fy) * (1 - np.sqrt(term_inside)) if term_inside >= 0 else 0
+        # คำนวณ Rn และ rho_req
+        if d_eff > 0:
+            Rn = Mu_calc / (phi_flex * b * d_eff**2)
+            st.latex(rf"R_n = \frac{{M_u}}{{\phi b d_{{eff}}^2}} = \frac{{{Mu_calc:.0f}}}{{0.9 \times {b:.0f} \times {d_eff:.1f}^2}} = {Rn:.3f} \text{{ MPa}}")
+            
+            term_inside = 1 - (2 * Rn) / (0.85 * fc)
+            if term_inside >= 0:
+                rho_req = (0.85 * fc / fy) * (1 - np.sqrt(term_inside))
+                st.latex(rf"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2 R_n}}{{0.85 f'_c}}}} \right)")
+                st.latex(rf"\rho_{{req}} = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.3f})}}{{0.85({fc})}}}} \right) = {rho_req:.5f}")
+            else:
+                rho_req = 0
+                st.error("⚠️ Section is over-reinforced or requires compression steel (Rn too high).")
+        else:
+            Rn, rho_req = 0, 0
+            
+        # คำนวณ rho_min
+        rho_min_1 = 0.25 * np.sqrt(fc) / fy
+        rho_min_2 = 1.4 / fy
+        rho_min = max(rho_min_1, rho_min_2)
         
-        rho_min = max((0.25 * np.sqrt(fc) / fy), (1.4 / fy))
-        
+        st.latex(r"\rho_{min} = \max\left(\frac{0.25 \sqrt{f'_c}}{f_y}, \frac{1.4}{f_y}\right)")
+        st.latex(rf"\rho_{{min}} = \max\left(\frac{{0.25 \sqrt{{{fc}}}}}{{{fy}}}, \frac{{1.4}}{{{fy}}}\right) = \max({rho_min_1:.5f}, {rho_min_2:.5f}) = {rho_min:.5f}")
+
+        # คำนวณ As 
         as_req_calc = rho_req * b * d_eff
         as_min_calc = rho_min * b * d_eff
         as_final_req = max(as_req_calc, as_min_calc)
 
         st.latex(rf"A_{{s,req}} = \rho_{{req}} b d_{{eff}} = {rho_req:.5f} \times {b:.0f} \times {d_eff:.1f} = {as_req_calc:.1f} \text{{ mm}}^2")
         st.latex(rf"A_{{s,min}} = \rho_{{min}} b d_{{eff}} = {rho_min:.5f} \times {b:.0f} \times {d_eff:.1f} = {as_min_calc:.1f} \text{{ mm}}^2")
+        
+        # สรุปเปรียบเทียบ
         st.markdown(rf"**$\Rightarrow$ Design Required $A_s$:** $\max(A_{{s,req}}, A_{{s,min}}) = \mathbf{{{as_final_req:.1f}}} \text{{ mm}}^2$")
+        st.markdown(rf"**$\Rightarrow$ Provided Capacity ($A_{{s,prov}}$):** $\mathbf{{{total_As:.1f}}} \text{{ mm}}^2$")
         
         if total_As >= as_final_req:
-            st.success(rf"✅ Check: Provided $A_s$ ({total_As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
+            st.success(rf"✅ Check: $A_{{s,prov}}$ ({total_As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
         else:
-            st.error(rf"❌ Check: Provided $A_s$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²)")
-
+            st.error(rf"❌ Check: $A_{{s,prov}}$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²) - Please increase reinforcement!")
+       
         # ==========================================
         # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS WITH PLOT
         # ==========================================
