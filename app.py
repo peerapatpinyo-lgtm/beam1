@@ -371,7 +371,6 @@ else:
                         col_chk1, col_chk2 = st.columns(2)
                         with col_chk1: st.metric("Deflection (L/240)", f"{d_long:.2f} mm", f"{'Pass' if d_long <= limit_240 else 'Fail'}")
                         with col_chk2: st.metric("Crack Width", f"{w_crack:.3f} mm", f"{'Pass' if w_crack <= limit_crack else 'Warning'}")
-
                     # Right Column: Instant Section Drawing
                     with col_draw:
                         fig_cs = plot_cross_section_fixed(
@@ -382,7 +381,11 @@ else:
                         st.pyplot(fig_cs)
                         plt.close(fig_cs) 
 
-                    # Store Results for Report
+                    # 🛠️ 1. คำนวณ a และ c ก่อน (สมมติ beta1 = 0.85 สำหรับคอนกรีตทั่วไป)
+                    a_val = (as_prov_b * fy) / (0.85 * fc * b_mm) if b_mm > 0 else 0
+                    c_val = a_val / 0.85
+
+                    # 🛠️ 2. Store Results for Report (เพิ่ม d_b, a, c เข้าไปด้านล่างสุด)
                     final_design_res.append({
                         'span_id': i, 'L': s_len, 'b': b_mm, 'h': h_mm, 'fc': fc, 'fy': fy, 
                         'Mu_pos': mu_pos, 'Mu_neg': mu_neg, 'Vu_max': vu_max, 'cover': cover_mm,
@@ -396,8 +399,14 @@ else:
                         'service': {'delta_long': d_long, 'limit_240': limit_240, 'ok': d_long <= limit_240},
                         'crack': {'w': w_crack, 'limit': limit_crack, 'status': status_crack},
                         'top': {'n': top_layers[0]['n'] if top_layers else 0, 'db': top_layers[0]['db'] if top_layers else 12, 'layers': num_t_layers, 'all_layers': top_layers},
-                        'bot': {'n': bot_layers[0]['n'] if bot_layers else 0, 'db': bot_layers[0]['db'] if bot_layers else 12, 'layers': num_b_layers, 'all_layers': bot_layers}
+                        'bot': {'n': bot_layers[0]['n'] if bot_layers else 0, 'db': bot_layers[0]['db'] if bot_layers else 12, 'layers': num_b_layers, 'all_layers': bot_layers},
+                        
+                        # 📦 แพ็คของเพิ่ม 3 ตัวนี้ เพื่อส่งไปให้ Tab 3 วาดรูป
+                        'd_b': d_b,
+                        'a': a_val,
+                        'c': c_val
                     })
+                    
 
             st.markdown("---")
             if st.button("🏗️ Generate Detailed Drawing"):
