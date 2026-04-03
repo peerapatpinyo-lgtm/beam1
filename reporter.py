@@ -136,10 +136,14 @@ def render_calculation_report(res):
         current_y = cov + stir_db
         vertical_spacing = 25.0
         dt_approx = 0.0 
-        
+
         st.markdown(f"**1. Reinforcement Details (Tension Side)**")
         
         if valid_t_layers:
+            # สร้าง List ไว้เก็บข้อความสมการของแต่ละชั้น
+            num_terms = []
+            den_terms = []
+            
             for i, layer in enumerate(valid_t_layers):
                 n = layer['n']
                 db = layer['db']
@@ -156,18 +160,32 @@ def render_calculation_report(res):
                 sum_Ay += (A_layer * y_center)
                 current_y += db + vertical_spacing
                 
+                # เก็บค่าเพื่อนำไปแสดงในสมการ y_bar
+                num_terms.append(f"({A_layer:.1f} \\times {y_center:.1f})")
+                den_terms.append(f"{A_layer:.1f}")
+                
             y_bar = sum_Ay / total_As if total_As > 0 else 0
             d_eff = h - y_bar
             
             if len(valid_t_layers) > 1:
-                st.latex(rf"\bar{{y}} = \frac{{\sum A_i y_i}}{{\sum A_i}} = \frac{{{sum_Ay:.1f}}}{{{total_As:.1f}}} = {y_bar:.1f} \text{{ mm}}")
-                st.latex(rf"d_{{eff}} = h - \bar{{y}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
+                # นำข้อความสมการมาเชื่อมกันด้วยเครื่องหมายบวก
+                num_str = " + ".join(num_terms)
+                den_str = " + ".join(den_terms)
+                
+                st.markdown("**การหาจุดศูนย์ถ่วงกลุ่มเหล็กเสริม (Centroid, $\\bar{y}$):**")
+                st.latex(r"\bar{y} = \frac{\sum (A_i \times y_i)}{\sum A_i}")
+                # บรรทัดนี้คือการแทนค่าตัวเลขแบบกระจายทุกชั้น
+                st.latex(rf"\bar{{y}} = \frac{{{num_str}}}{{{den_str}}}")
+                st.latex(rf"\bar{{y}} = \frac{{{sum_Ay:.1f}}}{{{total_As:.1f}}} = {y_bar:.1f} \text{{ mm}}")
+                # แสดงการคำนวณ d_eff
+                st.latex(rf"d_{{eff}} = h - \bar{{y}} = {h:.0f} - {y_bar:.1f} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
             else:
                 st.latex(rf"d_{{eff}} = h - c_{{clear}} - d_{{stirrup}} - \frac{{d_{{b}}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
         else:
             st.warning("No reinforcement provided.")
             d_eff, total_As, y_bar, dt_approx = 0, 0, 0, 0
             return 0, 0
+       
 
         # --- Required Steel Calculation (Basic Approx) ---
         st.markdown("**2. Required Reinforcement ($A_{s,req}$)**")
