@@ -435,18 +435,18 @@ def render_calculation_report(res):
     st.markdown("#### 4.1 Deflection Control")
     L_mm = L_m * 1000
     
-    # เพิ่มตัวเลือก Deflection Limit ตามมาตรฐาน ACI 318 Table 24.2.2
+    # Deflection Limit Options (Ref: ACI 318-19 Table 24.2.2)
     def_options = {
-        "L/180 (หลังคาแบน ที่ไม่รองรับชิ้นส่วนที่แตกหักง่าย)": 180,
-        "L/240 (พื้น/หลังคา ที่รองรับชิ้นส่วนที่ไม่แตกหักง่าย)": 240,
-        "L/360 (พื้นทั่วไป ที่ไม่รองรับชิ้นส่วนที่แตกหักง่าย)": 360,
-        "L/480 (พื้น/หลังคา ที่รองรับชิ้นส่วนที่แตกหักง่าย)": 480
+        "L/180 (Flat roofs not supporting fragile elements)": 180,
+        "L/240 (Floors/roofs supporting non-fragile elements)": 240,
+        "L/360 (Floors not supporting fragile elements)": 360,
+        "L/480 (Floors/roofs supporting fragile elements)": 480
     }
     
     selected_def_label = st.selectbox(
-        "📍 เลือกเกณฑ์ระยะแอ่นตัวที่ยอมให้ (Allowable Deflection Limit):",
+        "📍 Select Allowable Deflection Limit:",
         options=list(def_options.keys()),
-        index=1 # ตั้งค่าเริ่มต้นไว้ที่ L/240
+        index=1 # Defaults to L/240
     )
     
     denom_def = def_options[selected_def_label]
