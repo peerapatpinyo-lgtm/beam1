@@ -4,10 +4,12 @@ import io
 import numpy as np
 import textwrap
 
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     """
-    Ultimate Plotter (Fixed Scale & Vectors): กราฟิกที่สมบูรณ์แบบ แก้ปัญหาลูกศรยาวเกิน
+    Final Plotter: แก้ปัญหาตัวหนังสือกองปลายลูกศร ล็อกความยาวเวกเตอร์ และสับหว่างข้อความแนวตั้ง
     """
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13, 6), gridspec_kw={'width_ratios': [1, 1.2, 1.6]})
     fig.subplots_adjust(wspace=0.25)
@@ -44,9 +46,10 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         
         ax1.plot(b/2, y, 'o', color=color, markersize=10, markeredgecolor='black', markeredgewidth=1, zorder=5)
         
+        # หลบข้อความระยะ d สลับซ้ายขวาเล็กน้อยถ้าใกล้กัน
         base_x = b + (b * 0.1)
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
-            base_x += (b * 0.3) 
+            base_x += (b * 0.25) 
             
         ax1.annotate(f"d = {di:.0f}", xy=(b, y), xytext=(base_x, y),
                      textcoords="data", va="center", fontsize=9, zorder=6,
@@ -82,6 +85,7 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         if lr['type'] == 'Tension':
             ax2.add_patch(patches.Polygon([[0, na_y], [x_val, y], [0, y]], closed=True, facecolor='#ffe3e0', edgecolor='none', alpha=0.6))
         
+        # สับหว่างข้อความ Strain ขึ้น/ลง
         txt_y = y - 0.04 * h
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
             txt_y = y + 0.04 * h
@@ -95,55 +99,57 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     ax3.set_title("3. Stress & Force Vectors", fontsize=12, fontweight='bold', pad=15)
     ax3.plot([0, 0], [0, h], 'k-', lw=1.5)
     
-    # กำหนดสเกลความกว้างอ้างอิงจากความสูง (h) ป้องกันปัญหาสเกลเพี้ยน
-    base_scale = h * 0.15 
-    block_w = base_scale
-    arrow_len = base_scale * 2.5 # กำหนดความยาวลูกศรตายตัว ให้สวยงามพอดี
+    # ล็อกความกว้างลูกศรให้คงที่เสมอ (35% ของความสูงคาน)
+    arr_L = h * 0.35 
+    block_w = h * 0.15
+    bbox_force = dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85) # กรอบพื้นขาวลอยๆ ดูสะอาด
     
     # วาด Whitney Stress Block
     ax3.add_patch(patches.Rectangle((0, h-a), block_w, a, facecolor='#bde0fe', edgecolor='#023e8a', lw=1.5, alpha=0.7))
     ax3.text(block_w/2, h + 0.02*h, r"$0.85f'_c$", ha='center', fontsize=10, color='#023e8a')
     ax3.text(block_w + 0.02*h, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='#023e8a')
     
-    bbox_force = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
-    
-    # วาดเวกเตอร์แรงอัดคอนกรีต (Cc) ชี้เข้า (x=0)
-    ax3.annotate("", xy=(0, h - a/2), xytext=(arrow_len, h - a/2), 
-                 arrowprops=dict(arrowstyle="->", color="#023e8a", lw=3))
-    ax3.text(arrow_len + 0.02*h, h - a/2, "$C_c$", va='center', fontsize=11, color='#023e8a', fontweight='bold', bbox=bbox_force)
+    # วาดแรงอัดคอนกรีต (Cc)
+    y_cc = h - a/2
+    ax3.annotate("", xy=(0, y_cc), xytext=(arr_L, y_cc), arrowprops=dict(arrowstyle="->", color="#023e8a", lw=2.5))
+    # วางข้อความ Cc ไว้บนตรงกลางลูกศร
+    ax3.text(arr_L * 0.5, y_cc + 0.03*h, "$C_c$", va='bottom', ha='center', fontsize=11, color='#023e8a', fontweight='bold', bbox=bbox_force)
 
     for i, lr in enumerate(sorted_layers):
         di = lr['d_i']
         y = h - di
-        fs_mag = abs(lr['fs']) # ใช้ค่าสัมบูรณ์ (Absolute) แก้ปัญหา f's ติดลบ
+        fs_mag = abs(lr['fs'])
         
         if lr['type'] == 'Tension':
-            # แรงดึง (T) ชี้ออกทางซ้าย (จาก 0 ไปติดลบ)
-            offset_x = -arrow_len
-            # ขยับลูกศรหลบถ้ามีเหล็กดึงหลายชั้นอยู่ใกล้กัน
-            if i > 0 and lr['type'] == sorted_layers[i-1]['type'] and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
-                offset_x -= (base_scale * 1.5)
-                
-            ax3.annotate("", xy=(offset_x, y), xytext=(0, y), 
-                         arrowprops=dict(arrowstyle="->", color="#c1121f", lw=2.5))
-            ax3.text(offset_x - 0.02*h, y, f"T ($f_s$={fs_mag:.0f})", va='center', ha='right', 
+            # แรงดึง (T) ลูกศรคงที่ ชี้ออกซ้าย
+            ax3.annotate("", xy=(-arr_L, y), xytext=(0, y), arrowprops=dict(arrowstyle="->", color="#c1121f", lw=2.5))
+            
+            # สับหว่างข้อความ T ไว้บนและล่างของลูกศร (ถ้ามีเหล็กหลายชั้น)
+            y_offset = 0.035 * h if i % 2 == 0 else -0.035 * h
+            val_align = 'bottom' if i % 2 == 0 else 'top'
+            
+            # วางข้อความตรงกลางความยาวลูกศร (-arr_L * 0.5)
+            ax3.text(-arr_L * 0.5, y + y_offset, f"T ($f_s$={fs_mag:.0f})", va=val_align, ha='center', 
                      fontsize=9, color='#c1121f', fontweight='bold', bbox=bbox_force)
             
         else:
-            # แรงอัดเหล็ก (Cs) ชี้เข้าหน้าตัดจากทางขวา (มุ่งหน้าไป 0)
-            offset_x = arrow_len
-            # ขยับหางลูกศรหลบ Cc หรือ Cs ชั้นอื่น เพื่อไม่ให้ Text ทับกัน
-            if abs((h - a/2) - y) < 0.1 * h or (i > 0 and lr['type'] == sorted_layers[i-1]['type'] and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h):
-                offset_x += (base_scale * 1.5)
+            # แรงอัดเหล็ก (Cs) ลูกศรคงที่ ชี้เข้าซ้าย
+            ax3.annotate("", xy=(0, y), xytext=(arr_L, y), arrowprops=dict(arrowstyle="->", color="#1d3557", lw=2.5))
+            
+            # เช็คว่าใกล้ Cc ไหม ถ้าใกล้ให้ย้าย Text ลงข้างล่าง
+            y_offset = -0.035 * h
+            val_align = 'top'
+            if y_cc - y > 0.08 * h: # ถ้าระยะห่างมากพอ เอาไว้ข้างบนลูกศรได้
+                y_offset = 0.035 * h
+                val_align = 'bottom'
                 
-            ax3.annotate("", xy=(0, y), xytext=(offset_x, y), 
-                         arrowprops=dict(arrowstyle="->", color="#1d3557", lw=2.5))
-            ax3.text(offset_x + 0.02*h, y, f"$C_s$ ($f'_s$={fs_mag:.0f})", va='center', ha='left', 
+            # วางข้อความตรงกลางความยาวลูกศร (arr_L * 0.5)
+            ax3.text(arr_L * 0.5, y + y_offset, f"$C_s$ ($f'_s$={fs_mag:.0f})", va=val_align, ha='center', 
                      fontsize=9, color='#1d3557', fontweight='bold', bbox=bbox_force)
 
     plt.tight_layout()
     return fig
-
+    
 def auto_arrange_bars(total_n, db, b, cover, stir_db):
     """
     [NEW] คำนวณและจัดเรียงเหล็กเป็นชั้นๆ ตามข้อกำหนดระยะห่างของ ACI Code
