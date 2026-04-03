@@ -196,6 +196,7 @@ def render_calculation_report(res):
         # ==========================================
         # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS WITH PLOT
         # ==========================================
+
         st.markdown("**3. Strain Compatibility & Stress Block (Iterative Method)**")
         
         # เรียกใช้งาน Engine คำนวณแบบละเอียด
@@ -203,7 +204,7 @@ def render_calculation_report(res):
             all_bot_layers, all_top_layers, b, h, fc, fy, cov, stir_db, is_top_tension=is_top
         )
 
-        col_math, col_plot = st.columns([1.1, 1])
+        col_math, col_plot = st.columns([1, 1.5]) # ปรับสัดส่วนให้รูปใหญ่ขึ้นนิดนึง
         
         with col_math:
             st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
@@ -211,20 +212,20 @@ def render_calculation_report(res):
             
             st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
             for lay_res in layer_res:
-                # ตกแต่ง UI ไอคอน
                 if lay_res['type'] == 'Tension':
                     status = "🟢 Yielded" if lay_res['is_yielded'] else "🟡 Elastic"
-                    st.write(f"- **Bar @ $d$ = {lay_res['d_i']:.1f} mm** ({lay_res['type']}): $\epsilon_s$ = {lay_res['eps_s']:.5f} | $f_s$ = {lay_res['fs']:.1f} MPa | {status}")
+                    st.write(f"- **Bar @ $d$={lay_res['d_i']:.1f}** ({lay_res['type']}):\n $\epsilon_s$={lay_res['eps_s']:.5f} | $f_s$={lay_res['fs']:.1f} MPa | {status}")
                 else:
-                    status = "🔴 Yielded (Comp)" if lay_res['is_yielded'] else "⚪ Elastic (Comp)"
-                    st.write(f"- **Bar @ $d'$ = {lay_res['d_i']:.1f} mm** ({lay_res['type']}): $\epsilon_s$ = {lay_res['eps_s']:.5f} | $f_s$ = {lay_res['fs']:.1f} MPa | {status}")
+                    status = "🔴 Yielded" if lay_res['is_yielded'] else "⚪ Elastic"
+                    st.write(f"- **Bar @ $d'$={lay_res['d_i']:.1f}** ({lay_res['type']}):\n $\epsilon_s$={lay_res['eps_s']:.5f} | $f_s$={lay_res['fs']:.1f} MPa | {status}")
 
         with col_plot:
-            # วาดรูป Stress-Strain ตามสภาวะที่กำลังคำนวณอยู่
+            # ⬇️ เปลี่ยนมาเรียกใช้ฟังก์ชันใหม่ที่นี่ครับ ⬇️
             if c_val > 0 and a_val > 0:
                 try:
-                    fig_stress = section_plotter.plot_stress_strain_diagram(
-                        b=b, h=h, d=d_eff, c=c_val, a=a_val, fc=fc
+                    # ส่ง layer_res เข้าไปเพื่อให้กราฟวาดรายละเอียดของแต่ละ Layer ได้
+                    fig_stress = section_plotter.plot_detailed_stress_strain(
+                        b=b, h=h, c=c_val, a=a_val, fc=fc, layer_res=layer_res, is_top=is_top
                     )
                     st.pyplot(fig_stress, use_container_width=True)
                 except Exception as e:
