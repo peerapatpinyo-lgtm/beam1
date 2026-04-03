@@ -154,7 +154,8 @@ def render_calculation_report(res):
                 if i == 0:
                     dt_approx = h - y_center 
                 
-                st.write(f"- **Layer {i+1}:** {int(n)}-DB{int(db)} | $A_{{s{i+1}}} = {A_layer:.1f} \text{{ mm}}^2$ | $y_{{{i+1}}} = {y_center:.1f} \text{{ mm}}$")
+                # --- แก้บั๊ก ext ด้วยการใช้ rf (Raw f-string) ---
+                st.write(rf"- **Layer {i+1}:** {int(n)}-DB{int(db)} | $A_{{s{i+1}}} = {A_layer:.1f} \text{{ mm}}^2$ | $y_{{{i+1}}} = {y_center:.1f} \text{{ mm}}$")
                 
                 total_As += A_layer
                 sum_Ay += (A_layer * y_center)
@@ -180,7 +181,10 @@ def render_calculation_report(res):
                 # แสดงการคำนวณ d_eff
                 st.latex(rf"d_{{eff}} = h - \bar{{y}} = {h:.0f} - {y_bar:.1f} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
             else:
-                st.latex(rf"d_{{eff}} = h - c_{{clear}} - d_{{stirrup}} - \frac{{d_{{b}}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
+                # --- เพิ่มการแสดงสมการและแทนค่า d_eff กรณีมีเหล็กชั้นเดียว ---
+                db1 = valid_t_layers[0]['db']
+                st.latex(rf"d_{{eff}} = h - \text{{cover}} - d_{{stirrup}} - \frac{{d_b}}{{2}}")
+                st.latex(rf"d_{{eff}} = {h:.0f} - {cov:.0f} - {stir_db:.0f} - \frac{{{db1:.0f}}}{{2}} = \mathbf{{{d_eff:.1f}}}\text{{ mm}}")
         else:
             st.warning("No reinforcement provided.")
             d_eff, total_As, y_bar, dt_approx = 0, 0, 0, 0
