@@ -7,13 +7,11 @@ import textwrap
 
 def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     """
-    Ultimate Plotter: ป้องกันตัวอักษรทับกัน, กล่องข้อความอ่านง่าย, และลูกศรเวกเตอร์แรงสมบูรณ์แบบ
+    Ultimate Plotter (Fixed Scale & Vectors): กราฟิกที่สมบูรณ์แบบ แก้ปัญหาลูกศรยาวเกิน
     """
-    # ปรับขนาดและสัดส่วนพื้นที่วาดให้กว้างขึ้นเพื่อรองรับลูกศรและข้อความ
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13, 6), gridspec_kw={'width_ratios': [1, 1.3, 1.8]})
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13, 6), gridspec_kw={'width_ratios': [1, 1.2, 1.6]})
     fig.subplots_adjust(wspace=0.25)
 
-    # ขยายขอบเขต Y ให้มีพื้นที่ว่างด้านบนและล่าง ไม่ให้อึดอัด
     for ax in [ax1, ax2, ax3]:
         ax.set_ylim(-0.15 * h, 1.15 * h)
         ax.axis('off')
@@ -21,7 +19,7 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     na_y = h - c
     
     # ---------------------------------------------
-    # 0. เส้น Grid อ้างอิง (วาดจางๆ ไว้ด้านหลังสุด)
+    # 0. เส้น Grid อ้างอิง
     # ---------------------------------------------
     for ax in [ax1, ax2, ax3]:
         ax.axhline(y=0, color='gray', linestyle='-', linewidth=1, alpha=0.3)
@@ -36,30 +34,24 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     ax1.set_title("1. Cross Section", fontsize=12, fontweight='bold', pad=15)
     ax1.add_patch(patches.Rectangle((0, 0), b, h, facecolor='#f8f9fa', edgecolor='black', lw=1.5))
     
-    # เรียงลำดับ Layer จากบนลงล่าง เพื่อเช็คการทับกันของข้อความ
     sorted_layers = sorted(layer_res, key=lambda x: x['d_i'])
+    bbox_style = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
     
     for i, lr in enumerate(sorted_layers):
         di = lr['d_i']
         y = h - di
         color = '#e63946' if lr['type'] == 'Tension' else '#1d3557'
         
-        # วาดเหล็ก
         ax1.plot(b/2, y, 'o', color=color, markersize=10, markeredgecolor='black', markeredgewidth=1, zorder=5)
         
-        # --- ระบบหลบข้อความอัตโนมัติ (Anti-Overlap) ---
-        base_x = b + 15
-        # ถ้าเหล็กชั้นนี้ อยู่ใกล้ชั้นก่อนหน้ามากเกินไป ให้เยื้องป้ายบอกระยะ d ออกไปทางขวาอีก
+        base_x = b + (b * 0.1)
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
-            base_x += 40 
-        
-        # วาดเส้นชี้และข้อความแบบมีพื้นหลัง
-        bbox_style = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
+            base_x += (b * 0.3) 
+            
         ax1.annotate(f"d = {di:.0f}", xy=(b, y), xytext=(base_x, y),
                      textcoords="data", va="center", fontsize=9, zorder=6,
                      bbox=bbox_style, arrowprops=dict(arrowstyle="-", color="gray", lw=1))
 
-    # ป้ายแกนสะเทิน
     ax1.text(b/2, na_y + 0.02*h, f"N.A. (c = {c:.1f})", ha='center', va='bottom', fontsize=10, fontweight='bold', color='black')
 
     # ---------------------------------------------
@@ -72,7 +64,6 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     max_eps_s = max([abs(lr['eps_s']) for lr in layer_res] + [eps_c])
     scale = 1.0 / max_eps_s if max_eps_s > 0 else 1
     
-    # คอนกรีต (สามเหลี่ยมบน)
     x_c = eps_c * scale
     ax2.add_patch(patches.Polygon([[0, na_y], [x_c, h], [0, h]], closed=True, facecolor='#e2eafc', edgecolor='#03045e', lw=1.5))
     ax2.text(x_c/2, h + 0.02*h, r"$\epsilon_c = 0.003$", ha='center', fontsize=10, color='#03045e', fontweight='bold')
@@ -82,20 +73,18 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         y = h - di
         eps_s = lr['eps_s']
         
-        x_val = -eps_s * scale if lr['type'] == 'Tension' else eps_s * scale
+        x_val = -abs(eps_s) * scale if lr['type'] == 'Tension' else abs(eps_s) * scale
         color = '#e63946' if lr['type'] == 'Tension' else '#1d3557'
         
-        # เส้นกราฟสเตรน
         ax2.plot([0, x_val], [na_y, y], color=color, lw=1.5)
         ax2.plot([0, x_val], [y, y], color=color, linestyle='--', lw=1.2)
         
         if lr['type'] == 'Tension':
             ax2.add_patch(patches.Polygon([[0, na_y], [x_val, y], [0, y]], closed=True, facecolor='#ffe3e0', edgecolor='none', alpha=0.6))
         
-        # --- ระบบหลบข้อความอัตโนมัติ (เยื้องขึ้น/ลง) ---
         txt_y = y - 0.04 * h
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
-            txt_y = y + 0.04 * h # สลับให้อยู่ด้านบนของเส้นแทน
+            txt_y = y + 0.04 * h
             
         ax2.text(x_val, txt_y, f"$\epsilon_s$={eps_s:.5f}", ha='center', fontsize=9, color=color,
                  bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.8), zorder=6)
@@ -106,49 +95,50 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     ax3.set_title("3. Stress & Force Vectors", fontsize=12, fontweight='bold', pad=15)
     ax3.plot([0, 0], [0, h], 'k-', lw=1.5)
     
-    # Whitney Stress Block
-    block_w = 1.0
+    # กำหนดสเกลความกว้างอ้างอิงจากความสูง (h) ป้องกันปัญหาสเกลเพี้ยน
+    base_scale = h * 0.15 
+    block_w = base_scale
+    arrow_len = base_scale * 2.5 # กำหนดความยาวลูกศรตายตัว ให้สวยงามพอดี
+    
+    # วาด Whitney Stress Block
     ax3.add_patch(patches.Rectangle((0, h-a), block_w, a, facecolor='#bde0fe', edgecolor='#023e8a', lw=1.5, alpha=0.7))
     ax3.text(block_w/2, h + 0.02*h, r"$0.85f'_c$", ha='center', fontsize=10, color='#023e8a')
-    ax3.text(block_w + 0.1, h - a/2 + 0.04*h, f"a={a:.1f}", va='bottom', fontsize=9, color='#023e8a')
+    ax3.text(block_w + 0.02*h, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='#023e8a')
     
-    bbox_force = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.9)
+    bbox_force = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
     
-    # แรงอัดคอนกรีต (Cc) - ลูกศรชี้เข้าหาหน้าตัด (มุ่งสู่ x=0)
-    ax3.annotate("", xy=(0, h - a/2), xytext=(block_w * 2.2, h - a/2), 
+    # วาดเวกเตอร์แรงอัดคอนกรีต (Cc) ชี้เข้า (x=0)
+    ax3.annotate("", xy=(0, h - a/2), xytext=(arrow_len, h - a/2), 
                  arrowprops=dict(arrowstyle="->", color="#023e8a", lw=3))
-    ax3.text(block_w * 2.3, h - a/2, "$C_c$", va='center', fontsize=11, color='#023e8a', fontweight='bold')
+    ax3.text(arrow_len + 0.02*h, h - a/2, "$C_c$", va='center', fontsize=11, color='#023e8a', fontweight='bold', bbox=bbox_force)
 
-    t_count = 0
-    c_count = 0
-    
     for i, lr in enumerate(sorted_layers):
         di = lr['d_i']
         y = h - di
-        fs = lr['fs']
+        fs_mag = abs(lr['fs']) # ใช้ค่าสัมบูรณ์ (Absolute) แก้ปัญหา f's ติดลบ
         
         if lr['type'] == 'Tension':
-            # แรงดึง (T) - ลูกศรดึงออกจากหน้าตัด (มุ่งหน้าไปทางซ้ายลบ)
-            # ยืดลูกศรให้ยาวขึ้นถ้ามีหลายชั้น เพื่อไม่ให้ข้อความทับกัน
-            offset_x = -1.2 - (t_count * 1.5) 
-            t_count += 1
-            
+            # แรงดึง (T) ชี้ออกทางซ้าย (จาก 0 ไปติดลบ)
+            offset_x = -arrow_len
+            # ขยับลูกศรหลบถ้ามีเหล็กดึงหลายชั้นอยู่ใกล้กัน
+            if i > 0 and lr['type'] == sorted_layers[i-1]['type'] and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
+                offset_x -= (base_scale * 1.5)
+                
             ax3.annotate("", xy=(offset_x, y), xytext=(0, y), 
                          arrowprops=dict(arrowstyle="->", color="#c1121f", lw=2.5))
-            ax3.text(offset_x - 0.2, y, f"T ($f_s$={fs:.0f})", va='center', ha='right', 
+            ax3.text(offset_x - 0.02*h, y, f"T ($f_s$={fs_mag:.0f})", va='center', ha='right', 
                      fontsize=9, color='#c1121f', fontweight='bold', bbox=bbox_force)
             
         else:
-            # แรงอัดเหล็ก (Cs) - ลูกศรชี้เข้าหาหน้าตัด (พุ่งซ้ายเข้าหา x=0)
-            offset_x = block_w * 2.2 + (c_count * 1.5)
-            # หลบลูกศร Cc ถ้าตำแหน่งใกล้กัน
-            if abs((h - a/2) - y) < 0.08 * h:
-                offset_x += 1.5 
-            c_count += 1
-            
+            # แรงอัดเหล็ก (Cs) ชี้เข้าหน้าตัดจากทางขวา (มุ่งหน้าไป 0)
+            offset_x = arrow_len
+            # ขยับหางลูกศรหลบ Cc หรือ Cs ชั้นอื่น เพื่อไม่ให้ Text ทับกัน
+            if abs((h - a/2) - y) < 0.1 * h or (i > 0 and lr['type'] == sorted_layers[i-1]['type'] and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h):
+                offset_x += (base_scale * 1.5)
+                
             ax3.annotate("", xy=(0, y), xytext=(offset_x, y), 
                          arrowprops=dict(arrowstyle="->", color="#1d3557", lw=2.5))
-            ax3.text(offset_x + 0.2, y, f"$C_s$ ($f'_s$={fs:.0f})", va='center', ha='left', 
+            ax3.text(offset_x + 0.02*h, y, f"$C_s$ ($f'_s$={fs_mag:.0f})", va='center', ha='left', 
                      fontsize=9, color='#1d3557', fontweight='bold', bbox=bbox_force)
 
     plt.tight_layout()
