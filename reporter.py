@@ -189,7 +189,7 @@ def render_calculation_report(res):
             st.warning("No reinforcement provided.")
             d_eff, total_As, y_bar, dt_approx = 0, 0, 0, 0
             return 0, 0
-       
+        
 
         # --- Required Steel Calculation (Detailed) ---
         st.markdown("**2. Required Reinforcement ($A_{s,req}$)**")
@@ -236,7 +236,7 @@ def render_calculation_report(res):
             st.success(rf"✅ Check: $A_{{s,prov}}$ ({total_As:.1f} mm²) $\ge$ Required $A_s$ ({as_final_req:.1f} mm²)")
         else:
             st.error(rf"❌ Check: $A_{{s,prov}}$ ({total_As:.1f} mm²) $<$ Required $A_s$ ({as_final_req:.1f} mm²) - Please increase reinforcement!")
-       
+        
         # ==========================================
         # 🌟 NEW: STRAIN COMPATIBILITY ANALYSIS WITH PLOT
         # ==========================================
@@ -247,7 +247,6 @@ def render_calculation_report(res):
         phiMn_val, As_t_val, a_val, Mn_val, c_val, eps_t_val, layer_res = get_phi_Mn_details_multi(
             all_bot_layers, all_top_layers, b, h, fc, fy, cov, stir_db, is_top_tension=is_top
         )
-
 
         st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
         st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
@@ -319,7 +318,8 @@ def render_calculation_report(res):
             else:
                 st.markdown("🟢 **เหล็กรับแรงดึง (Tension):**")
                 st.warning("ไม่มีเหล็กรับแรงดึง")
-# --- Ultimate Strength Limit State ---
+
+        # --- Ultimate Strength Limit State ---
         st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$) & Exact Moment Summation**")
         
         if eps_t_val >= 0.005:
