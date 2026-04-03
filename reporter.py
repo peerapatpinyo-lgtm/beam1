@@ -431,19 +431,34 @@ def render_calculation_report(res):
     st.markdown("### 4. Serviceability Audit (Ref: ACI 24.2)")
     
     # --- 4.1 Deflection ---
-    st.markdown("#### 4.1 Deflection Control")
-    L_mm = L_m * 1000
-    allowable_def = L_mm / 240
-    
-    st.write("**Instantaneous Deflection Limit (L/240):**")
-    st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{240}} = \frac{{{L_mm:.0f}}}{{240}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
-    st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
+        st.markdown("#### 4.1 Deflection Control")
+        L_mm = L_m * 1000
+        
+        # เพิ่มตัวเลือก Deflection Limit ตามมาตรฐาน ACI 318 Table 24.2.2
+        def_options = {
+            "L/180 (หลังคาแบน ที่ไม่รองรับชิ้นส่วนที่แตกหักง่าย)": 180,
+            "L/240 (พื้น/หลังคา ที่รองรับชิ้นส่วนที่ไม่แตกหักง่าย)": 240,
+            "L/360 (พื้นทั่วไป ที่ไม่รองรับชิ้นส่วนที่แตกหักง่าย)": 360,
+            "L/480 (พื้น/หลังคา ที่รองรับชิ้นส่วนที่แตกหักง่าย)": 480
+        }
+        
+        selected_def_label = st.selectbox(
+            "📍 เลือกเกณฑ์ระยะแอ่นตัวที่ยอมให้ (Allowable Deflection Limit):",
+            options=list(def_options.keys()),
+            index=1 # ตั้งค่าเริ่มต้นไว้ที่ L/240
+        )
+        
+        denom_def = def_options[selected_def_label]
+        allowable_def = L_mm / denom_def
+        
+        st.write("**Allowable Deflection Limit:**")
+        st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{{denom_def}}} = \frac{{{L_mm:.0f}}}{{{denom_def}}} = \mathbf{{{allowable_def:.2f}}}\text{{ mm}}")
+        st.latex(rf"\Delta_{{actual}} = \mathbf{{{abs(delta_svc):.3f}}}\text{{ mm}}")
 
-    if abs(delta_svc) <= allowable_def:
-        st.success(rf"✅ Deflection PASS: $\Delta_{{actual}} \le \Delta_{{allow}}$")
-    else:
-        st.warning(rf"⚠️ Deflection FAIL: $\Delta_{{actual}} > \Delta_{{allow}}$ (Increase section stiffness)")
-
+        if abs(delta_svc) <= allowable_def:
+            st.success(rf"✅ Deflection PASS: $\Delta_{{actual}} \le \Delta_{{allow}}$")
+        else:
+            st.warning(rf"⚠️ Deflection FAIL: $\Delta_{{actual}} > \Delta_{{allow}}$ (Increase section stiffness)")
     # --- 4.2 Crack Width ---
     st.markdown("#### 4.2 Crack Width Control (Gergely-Lutz)")
     
