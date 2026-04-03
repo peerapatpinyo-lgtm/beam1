@@ -57,21 +57,50 @@ def render_calculation_report(res):
     st.markdown(rf"**Structural Element:** Continuous RC Beam | **Span Length:** {L_m:.2f} m")
     st.divider()
 
-
-
-    st.markdown("---")
-    st.markdown("#### 📊 Stress-Strain & Equivalent Rectangular Block")
+    # =========================================================
+    # 📊 UPGRADED: Stress-Strain & Equivalent Rectangular Block
+    # =========================================================
+    st.markdown("### 📊 Equivalent Rectangular Concrete Stress Distribution (Whitney)")
     
-    # เรียกฟังก์ชันวาดรูป โดยดึงค่าจากดิกชันนารี res ที่ส่งมาจาก app.py
-    fig_stress = section_plotter.plot_stress_strain_diagram(
-        b=res['b'], 
-        h=res['h'], 
-        d=res['d_b'], 
-        c=res['c'], 
-        a=res['a'], 
-        fc=res['fc']
-    )
-    st.pyplot(fig_stress)
+    # ดึงค่าพารามิเตอร์อย่างปลอดภัย (ป้องกัน Error กรณีหน้าตัดไม่มีโมเมนต์)
+    c_val = res.get('c', 0)
+    a_val = res.get('a', 0)
+    d_val = res.get('d_b', res.get('d', h - cov - stir_db - 12)) # Fallback d_b
+    
+    if c_val > 0 and a_val > 0:
+        # แบ่งหน้าจอเป็น 2 ฝั่ง ซ้ายแสดงสมการ ขวาแสดงกราฟ
+        col_math, col_plot = st.columns([1.2, 1]) 
+        
+        with col_math:
+            st.markdown("**1. Neutral Axis & Stress Block Depth**")
+            st.latex(rf"c = \mathbf{{{c_val:.2f}}} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
+            st.latex(rf"a = \beta_1 c = {beta1:.3f}({c_val:.2f}) = \mathbf{{{a_val:.2f}}} \text{{ mm}}")
+            
+            st.markdown("**2. Internal Compression Force ($C_c$) & Lever Arm**")
+            # คำนวณแรงอัดคอนกรีตล้วนๆ (Cc)
+            Cc_kN = (0.85 * fc * a_val * b) / 1000 
+            # คำนวณแขนโมเมนต์โดยประมาณ (จากผิวถึงกึ่งกลางเหล็กรับแรงดึง)
+            lever_arm = d_val - (a_val / 2)
+            
+            st.latex(rf"C_c = 0.85 f'_c a b = 0.85({fc})({a_val:.2f})({b:.0f}) \times 10^{{-3}}")
+            st.latex(rf"C_c = \mathbf{{{Cc_kN:.1f}}} \text{{ kN}}")
+            st.latex(rf"\text{{Lever Arm }} (jd) = d - \frac{{a}}{{2}} = \mathbf{{{lever_arm:.1f}}} \text{{ mm}}")
+            
+            st.caption("💡 *Note: The basic $C_c$ above represents pure concrete compression. For exact nominal moment capacity considering multiple reinforcement layers and compressive steel forces, refer to the detailed Flexural Capacity Audit section below.*")
+
+        with col_plot:
+            # ใส่ try-except ครอบไว้ เผื่อฟังก์ชันใน section_plotter มีปัญหา แอปจะได้ไม่พัง
+            try:
+                fig_stress = section_plotter.plot_stress_strain_diagram(
+                    b=b, h=h, d=d_val, c=c_val, a=a_val, fc=fc
+                )
+                st.pyplot(fig_stress, use_container_width=True)
+            except Exception as e:
+                st.error(f"⚠️ Diagram rendering failed: {e}")
+                
+    else:
+        st.info("ℹ️ Stress-Strain diagram is not generated because neutral axis ($c$) data is missing (e.g., zero moment demand).")
+
     # =========================================================
     # 1. MATERIAL & SECTION PROPERTIES
     # =========================================================
