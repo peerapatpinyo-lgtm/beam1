@@ -231,8 +231,8 @@ def render_calculation_report(res):
                 except Exception as e:
                     st.error(f"⚠️ Diagram rendering failed: {e}")
 
-        # --- Ultimate Strength Limit State ---
-        st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$)**")
+# --- Ultimate Strength Limit State ---
+        st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$) & Exact Moment Summation**")
         
         if eps_t_val >= 0.005:
             phi_f = 0.90
@@ -245,7 +245,29 @@ def render_calculation_report(res):
             state = "Transition Zone"
 
         st.latex(rf"\epsilon_t = \mathbf{{{eps_t_val:.5f}}} \implies \phi = {phi_f:.3f} \text{{ ({state})}}")
-        st.latex(rf"M_{{n,exact}} = \sum (F_i \times \text{{arm}}_i) + M_{{concrete}} = {Mn_val:.2f}\text{{ kNm}}")
+        
+        # --- เพิ่มการแจกแจงที่มาของโมเมนต์แบบ Exact ---
+        st.markdown("**Breakdown of Moment about Compression Face:**")
+        
+        # 1. โมเมนต์จากคอนกรีต
+        Cc_kN = (0.85 * fc * a_val * b) / 1000
+        M_conc_kNm = Cc_kN * (a_val / 2) / 1000
+        st.latex(rf"M_{{concrete}} = C_c \times \frac{{a}}{{2}} = {Cc_kN:.1f} \times \frac{{{a_val:.1f}}}{{2}} \times 10^{{-3}} = {M_conc_kNm:.2f} \text{{ kNm}}")
+        
+        # 2. โมเมนต์จากเหล็กแต่ละชั้น
+        sum_M_steel = 0.0
+        for lay_res in layer_res:
+            F_kN = (lay_res['area'] * lay_res['fs']) / 1000
+            arm_m = lay_res['d_i'] / 1000
+            M_layer = F_kN * arm_m
+            sum_M_steel += M_layer
+            
+            # แสดงค่าเฉพาะชั้นที่มีแรงกระทำนัยสำคัญ (เพื่อไม่ให้หน้าจอยาวเกินไป)
+            if abs(F_kN) > 0.1:
+                st.latex(rf"M_{{s, layer {lay_res['layer_idx']}}} = F_s \times d_i = {F_kN:.1f} \times {arm_m:.3f} = {M_layer:.2f} \text{{ kNm}}")
+
+        # 3. สรุปผลรวมโมเมนต์
+        st.latex(rf"M_{{n,exact}} = M_{{concrete}} + \sum M_s = {M_conc_kNm:.2f} + {sum_M_steel:.2f} = \mathbf{{{Mn_val:.2f}}}\text{{ kNm}}")
         st.latex(rf"\phi M_n = {phi_f:.3f} \times {Mn_val:.2f} = \mathbf{{{phiMn_val:.2f}}}\text{{ kNm}}")
         
         mc1, mc2, mc3 = st.columns(3)
