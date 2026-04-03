@@ -7,16 +7,19 @@ import textwrap
 
 def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     """
-    Final Plotter: แก้ปัญหาตัวหนังสือกองปลายลูกศร ล็อกความยาวเวกเตอร์ และสับหว่างข้อความแนวตั้ง
+    Absolute Final Version: ล็อกสเกลแกน X แก้ปัญหาลูกศรและตัวหนังสือเพี้ยนอย่างเด็ดขาด
     """
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13, 6), gridspec_kw={'width_ratios': [1, 1.2, 1.6]})
-    fig.subplots_adjust(wspace=0.25)
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13, 6), gridspec_kw={'width_ratios': [1, 1.2, 1.5]})
+    fig.subplots_adjust(wspace=0.3)
 
+    # ขอบเขตแกน Y อิงตามความสูงคาน (h) เผื่อพื้นที่บนล่าง 15%
     for ax in [ax1, ax2, ax3]:
         ax.set_ylim(-0.15 * h, 1.15 * h)
         ax.axis('off')
 
     na_y = h - c
+    sorted_layers = sorted(layer_res, key=lambda x: x['d_i'])
+    bbox_style = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
     
     # ---------------------------------------------
     # 0. เส้น Grid อ้างอิง
@@ -25,17 +28,16 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         ax.axhline(y=0, color='gray', linestyle='-', linewidth=1, alpha=0.3)
         ax.axhline(y=h, color='gray', linestyle='-', linewidth=1, alpha=0.3)
         ax.axhline(y=na_y, color='black', linestyle='-.', linewidth=1.5, alpha=0.6)
-        for lr in layer_res:
+        for lr in sorted_layers:
             ax.axhline(y=h - lr['d_i'], color='gray', linestyle=':', linewidth=0.8, alpha=0.5)
 
     # ---------------------------------------------
     # 1. Cross Section (หน้าตัด)
     # ---------------------------------------------
     ax1.set_title("1. Cross Section", fontsize=12, fontweight='bold', pad=15)
-    ax1.add_patch(patches.Rectangle((0, 0), b, h, facecolor='#f8f9fa', edgecolor='black', lw=1.5))
+    ax1.set_xlim(-b * 0.2, b * 2.2) # ล็อกแกน X เผื่อที่ให้ตัวหนังสือด้านขวา
     
-    sorted_layers = sorted(layer_res, key=lambda x: x['d_i'])
-    bbox_style = dict(boxstyle="round,pad=0.2", fc="white", ec="gray", lw=0.5, alpha=0.9)
+    ax1.add_patch(patches.Rectangle((0, 0), b, h, facecolor='#f8f9fa', edgecolor='black', lw=1.5))
     
     for i, lr in enumerate(sorted_layers):
         di = lr['d_i']
@@ -44,10 +46,10 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         
         ax1.plot(b/2, y, 'o', color=color, markersize=10, markeredgecolor='black', markeredgewidth=1, zorder=5)
         
-        # หลบข้อความระยะ d สลับซ้ายขวาเล็กน้อยถ้าใกล้กัน
-        base_x = b + (b * 0.1)
+        # ถ้าระยะเหล็กใกล้กัน ให้เยื้องป้ายบอกระยะ d
+        base_x = b * 1.2
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
-            base_x += (b * 0.25) 
+            base_x = b * 1.6 
             
         ax1.annotate(f"d = {di:.0f}", xy=(b, y), xytext=(base_x, y),
                      textcoords="data", va="center", fontsize=9, zorder=6,
@@ -59,22 +61,23 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
     # 2. Strain Profile (ความเครียด)
     # ---------------------------------------------
     ax2.set_title("2. Strain Profile", fontsize=12, fontweight='bold', pad=15)
-    ax2.plot([0, 0], [0, h], 'k-', lw=1.5)
     
     eps_c = 0.003
-    max_eps_s = max([abs(lr['eps_s']) for lr in layer_res] + [eps_c])
-    scale = 1.0 / max_eps_s if max_eps_s > 0 else 1
+    max_eps_s = max([abs(lr['eps_s']) for lr in sorted_layers] + [eps_c])
+    ax2.set_xlim(-max_eps_s * 1.5, max_eps_s * 1.5) # ล็อกแกน X ของ Strain
     
-    x_c = eps_c * scale
-    ax2.add_patch(patches.Polygon([[0, na_y], [x_c, h], [0, h]], closed=True, facecolor='#e2eafc', edgecolor='#03045e', lw=1.5))
-    ax2.text(x_c/2, h + 0.02*h, r"$\epsilon_c = 0.003$", ha='center', fontsize=10, color='#03045e', fontweight='bold')
+    ax2.plot([0, 0], [0, h], 'k-', lw=1.5)
+    
+    # คอนกรีต
+    ax2.add_patch(patches.Polygon([[0, na_y], [eps_c, h], [0, h]], closed=True, facecolor='#e2eafc', edgecolor='#03045e', lw=1.5))
+    ax2.text(eps_c/2, h + 0.02*h, r"$\epsilon_c = 0.003$", ha='center', fontsize=10, color='#03045e', fontweight='bold')
 
     for i, lr in enumerate(sorted_layers):
         di = lr['d_i']
         y = h - di
         eps_s = lr['eps_s']
         
-        x_val = -abs(eps_s) * scale if lr['type'] == 'Tension' else abs(eps_s) * scale
+        x_val = -abs(eps_s) if lr['type'] == 'Tension' else abs(eps_s)
         color = '#e63946' if lr['type'] == 'Tension' else '#1d3557'
         
         ax2.plot([0, x_val], [na_y, y], color=color, lw=1.5)
@@ -83,7 +86,6 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
         if lr['type'] == 'Tension':
             ax2.add_patch(patches.Polygon([[0, na_y], [x_val, y], [0, y]], closed=True, facecolor='#ffe3e0', edgecolor='none', alpha=0.6))
         
-        # สับหว่างข้อความ Strain ขึ้น/ลง
         txt_y = y - 0.04 * h
         if i > 0 and abs(sorted_layers[i-1]['d_i'] - di) < 0.08 * h:
             txt_y = y + 0.04 * h
@@ -92,58 +94,40 @@ def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
                  bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.8), zorder=6)
 
     # ---------------------------------------------
-    # 3. Stress Profile (หน่วยแรง & เวกเตอร์แรงลัพธ์)
+    # 3. Stress Profile (หน่วยแรง & เวกเตอร์แรงลัพธ์) **แก้ปัญหาเด็ดขาดตรงนี้**
     # ---------------------------------------------
     ax3.set_title("3. Stress & Force Vectors", fontsize=12, fontweight='bold', pad=15)
+    
+    # ล็อกกรอบแกน X แบบคงที่! (-3.5 ถึง 3.5) เพื่อให้ลูกศรมีพื้นที่แน่นอน ไม่ยืดหดตามความสูงคาน
+    ax3.set_xlim(-3.5, 3.5) 
     ax3.plot([0, 0], [0, h], 'k-', lw=1.5)
     
-    # ล็อกความกว้างลูกศรให้คงที่เสมอ (35% ของความสูงคาน)
-    arr_L = h * 0.35 
-    block_w = h * 0.15
-    bbox_force = dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85) # กรอบพื้นขาวลอยๆ ดูสะอาด
+    # วาด Whitney Stress Block (กว้าง 1.0 เสมอ)
+    ax3.add_patch(patches.Rectangle((0, h-a), 1.0, a, facecolor='#bde0fe', edgecolor='#023e8a', lw=1.5, alpha=0.7))
+    ax3.text(0.5, h + 0.02*h, r"$0.85f'_c$", ha='center', fontsize=10, color='#023e8a')
+    ax3.text(1.1, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='#023e8a')
     
-    # วาด Whitney Stress Block
-    ax3.add_patch(patches.Rectangle((0, h-a), block_w, a, facecolor='#bde0fe', edgecolor='#023e8a', lw=1.5, alpha=0.7))
-    ax3.text(block_w/2, h + 0.02*h, r"$0.85f'_c$", ha='center', fontsize=10, color='#023e8a')
-    ax3.text(block_w + 0.02*h, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='#023e8a')
-    
-    # วาดแรงอัดคอนกรีต (Cc)
-    y_cc = h - a/2
-    ax3.annotate("", xy=(0, y_cc), xytext=(arr_L, y_cc), arrowprops=dict(arrowstyle="->", color="#023e8a", lw=2.5))
-    # วางข้อความ Cc ไว้บนตรงกลางลูกศร
-    ax3.text(arr_L * 0.5, y_cc + 0.03*h, "$C_c$", va='bottom', ha='center', fontsize=11, color='#023e8a', fontweight='bold', bbox=bbox_force)
+    # แรงอัดคอนกรีต (Cc) - ลูกศรยาว 1.5 
+    cc_y = h - a/2
+    ax3.annotate("", xy=(0, cc_y), xytext=(1.5, cc_y), arrowprops=dict(arrowstyle="->", color="#023e8a", lw=2.5))
+    ax3.text(1.6, cc_y, "$C_c$", va='center', ha='left', fontsize=11, color='#023e8a', fontweight='bold', bbox=bbox_style)
 
+    t_count = 0
     for i, lr in enumerate(sorted_layers):
-        di = lr['d_i']
-        y = h - di
-        fs_mag = abs(lr['fs'])
+        y = h - lr['d_i']
+        fs_mag = abs(lr['fs']) # ใช้ค่าสัมบูรณ์เสมอ ป้องกันติดลบ
         
-        if lr['type'] == 'Tension':
-            # แรงดึง (T) ลูกศรคงที่ ชี้ออกซ้าย
-            ax3.annotate("", xy=(-arr_L, y), xytext=(0, y), arrowprops=dict(arrowstyle="->", color="#c1121f", lw=2.5))
-            
-            # สับหว่างข้อความ T ไว้บนและล่างของลูกศร (ถ้ามีเหล็กหลายชั้น)
-            y_offset = 0.035 * h if i % 2 == 0 else -0.035 * h
-            val_align = 'bottom' if i % 2 == 0 else 'top'
-            
-            # วางข้อความตรงกลางความยาวลูกศร (-arr_L * 0.5)
-            ax3.text(-arr_L * 0.5, y + y_offset, f"T ($f_s$={fs_mag:.0f})", va=val_align, ha='center', 
-                     fontsize=9, color='#c1121f', fontweight='bold', bbox=bbox_force)
+        if lr['type'] == 'Compression':
+            # แรงอัดเหล็ก (Cs) - ลูกศรยาว 2.5 (ยาวกว่า Cc เพื่อให้จุดเริ่มต้นข้อความไม่ทับกัน)
+            ax3.annotate("", xy=(0, y), xytext=(2.5, y), arrowprops=dict(arrowstyle="->", color="#1d3557", lw=2.5))
+            ax3.text(2.6, y, f"$C_s$ ({fs_mag:.0f} MPa)", va='center', ha='left', fontsize=9, color='#1d3557', fontweight='bold', bbox=bbox_style)
             
         else:
-            # แรงอัดเหล็ก (Cs) ลูกศรคงที่ ชี้เข้าซ้าย
-            ax3.annotate("", xy=(0, y), xytext=(arr_L, y), arrowprops=dict(arrowstyle="->", color="#1d3557", lw=2.5))
-            
-            # เช็คว่าใกล้ Cc ไหม ถ้าใกล้ให้ย้าย Text ลงข้างล่าง
-            y_offset = -0.035 * h
-            val_align = 'top'
-            if y_cc - y > 0.08 * h: # ถ้าระยะห่างมากพอ เอาไว้ข้างบนลูกศรได้
-                y_offset = 0.035 * h
-                val_align = 'bottom'
-                
-            # วางข้อความตรงกลางความยาวลูกศร (arr_L * 0.5)
-            ax3.text(arr_L * 0.5, y + y_offset, f"$C_s$ ($f'_s$={fs_mag:.0f})", va=val_align, ha='center', 
-                     fontsize=9, color='#1d3557', fontweight='bold', bbox=bbox_force)
+            # แรงดึง (T) - ถอยลูกศรทีละนิดถ้าระยะเหล็กชิดกัน
+            x_start = -2.0 - (t_count * 0.2) 
+            ax3.annotate("", xy=(0, y), xytext=(x_start, y), arrowprops=dict(arrowstyle="->", color="#c1121f", lw=2.5))
+            ax3.text(x_start - 0.1, y, f"T ({fs_mag:.0f} MPa)", va='center', ha='right', fontsize=9, color='#c1121f', fontweight='bold', bbox=bbox_style)
+            t_count += 1
 
     plt.tight_layout()
     return fig
