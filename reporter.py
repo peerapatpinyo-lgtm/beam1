@@ -223,20 +223,42 @@ def render_calculation_report(res):
         )
 
         col_math, col_plot = st.columns([1, 1.5]) # ปรับสัดส่วนให้รูปใหญ่ขึ้นนิดนึง
-        
+
         with col_math:
             st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
             st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
             
+            # --- แก้ไขส่วนแสดงผล eps_s และ fs แบบกระจายสมการ ---
             st.markdown("**Layer-by-Layer Stress/Strain Distribution ($C=T$ Balanced):**")
+            st.latex(r"\epsilon_s = 0.003 \left( \frac{d_i - c}{c} \right), \quad f_s = \epsilon_s E_s")
+            
             for lay_res in layer_res:
-                if lay_res['type'] == 'Tension':
-                    status = "🟢 Yielded" if lay_res['is_yielded'] else "🟡 Elastic"
-                    st.write(f"- **Bar @ $d$={lay_res['d_i']:.1f}** ({lay_res['type']}):\n $\epsilon_s$={lay_res['eps_s']:.5f} | $f_s$={lay_res['fs']:.1f} MPa | {status}")
+                di = lay_res['d_i']
+                eps_s = lay_res['eps_s']
+                fs = lay_res['fs']
+                is_yield = lay_res['is_yielded']
+                l_type = lay_res['type']
+                
+                # กำหนดสถานะและสี
+                if l_type == 'Tension':
+                    status = "🟢 Yielded" if is_yield else "🟡 Elastic"
                 else:
-                    status = "🔴 Yielded" if lay_res['is_yielded'] else "⚪ Elastic"
-                    st.write(f"- **Bar @ $d'$={lay_res['d_i']:.1f}** ({lay_res['type']}):\n $\epsilon_s$={lay_res['eps_s']:.5f} | $f_s$={lay_res['fs']:.1f} MPa | {status}")
-
+                    status = "🔴 Yielded" if is_yield else "⚪ Elastic"
+                
+                st.markdown(f"- **Layer @ $d_i = {di:.1f}$ mm ({l_type}):**")
+                
+                # แสดงสมการแทนค่าความเครียด (eps_s)
+                st.latex(rf"\epsilon_s = 0.003 \times \frac{{{di:.1f} - {c_val:.2f}}}{{{c_val:.2f}}} = {eps_s:.5f}")
+                
+                # แสดงสมการแทนค่าหน่วยแรง (fs) และเช็ค Yield
+                fs_calc = eps_s * Es
+                if is_yield:
+                    # ถ้าค่าคำนวณเกิน fy ให้โชว์ว่าถูกตัดจบที่ fy
+                    st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \text{{ MPa}} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+                else:
+                    # ถ้ายังไม่เกิน fy ก็ใช้ค่าที่คำนวณได้เลย
+                    st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+        
         with col_plot:
             # ⬇️ เปลี่ยนมาเรียกใช้ฟังก์ชันใหม่ที่นี่ครับ ⬇️
             if c_val > 0 and a_val > 0:
