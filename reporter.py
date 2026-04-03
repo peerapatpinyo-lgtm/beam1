@@ -226,18 +226,36 @@ def render_calculation_report(res):
         col_math, col_plot = st.columns([1, 1.5])
         
         with col_math:
-            st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis)}}")
-            st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
-            
-            # --- กรองเฉพาะเหล็กรับแรงอัด (Compression) ให้อยู่ฝั่งซ้าย ---
+
+        st.latex(rf"c = {c_val:.2f} \text{{ mm}} \quad \text{{(Neutral Axis Depth)}}")
+        st.latex(rf"a = \beta_1 c = {beta1:.3f} \times {c_val:.2f} = {a_val:.2f} \text{{ mm}}")
+
+        # 1. วาดรูปหน้าตัดแบบเต็มความกว้าง (อยู่ด้านบน)
+        if c_val > 0 and a_val > 0:
+            try:
+                fig_stress = section_plotter.plot_detailed_stress_strain(
+                    b=b, h=h, c=c_val, a=a_val, fc=fc, layer_res=layer_res, is_top=is_top
+                )
+                # ไม่ต้องใส่ในคอลัมน์แล้ว ใช้ st.pyplot ตรงๆ เพื่อให้เต็มจอ
+                st.pyplot(fig_stress, use_container_width=True)
+            except Exception as e:
+                st.error(f"⚠️ Diagram rendering failed: {e}")
+                
+        st.divider() # ตีเส้นแบ่งนิดหน่อยให้ดูสบายตา
+
+        # 2. แบ่ง 2 คอลัมน์สำหรับเหล็กรับแรงอัดและแรงดึง (อยู่ด้านล่างรูป)
+        col_comp, col_tens = st.columns(2)
+        
+        # --- คอลัมน์ซ้าย: เหล็กรับแรงอัด (Compression) ---
+        with col_comp:
             comp_layers = [ly for ly in layer_res if ly['type'] == 'Compression']
             if comp_layers:
-                st.markdown("**เหล็กรับแรงอัด (Compression):**")
+                st.markdown("🔴 **เหล็กรับแรงอัด (Compression):**")
                 st.latex(r"\epsilon_s = 0.003 \left( \frac{c - d_i}{c} \right)")
                 
                 for lay_res in comp_layers:
                     di = lay_res['d_i']
-                    eps_s = abs(lay_res['eps_s']) # ใส่ abs เพื่อให้แสดงค่าบวกในสมการ
+                    eps_s = abs(lay_res['eps_s'])
                     fs = abs(lay_res['fs'])
                     is_yield = lay_res['is_yielded']
                     
@@ -250,22 +268,15 @@ def render_calculation_report(res):
                         st.latex(rf"f'_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
                     else:
                         st.latex(rf"f'_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
+            else:
+                st.markdown("🔴 **เหล็กรับแรงอัด (Compression):**")
+                st.info("ไม่มีเหล็กรับแรงอัด (Singly Reinforced)")
 
-        with col_plot:
-            # 1. วาดรูปกราฟิกก่อน
-            if c_val > 0 and a_val > 0:
-                try:
-                    fig_stress = section_plotter.plot_detailed_stress_strain(
-                        b=b, h=h, c=c_val, a=a_val, fc=fc, layer_res=layer_res, is_top=is_top
-                    )
-                    st.pyplot(fig_stress, use_container_width=True)
-                except Exception as e:
-                    st.error(f"⚠️ Diagram rendering failed: {e}")
-            
-            # 2. นำเหล็กรับแรงดึง (Tension) มาต่อด้านล่างรูปภาพ
+        # --- คอลัมน์ขวา: เหล็กรับแรงดึง (Tension) ---
+        with col_tens:
             tens_layers = [ly for ly in layer_res if ly['type'] == 'Tension']
             if tens_layers:
-                st.markdown("**เหล็กรับแรงดึง (Tension):**")
+                st.markdown("🟢 **เหล็กรับแรงดึง (Tension):**")
                 st.latex(r"\epsilon_s = 0.003 \left( \frac{d_i - c}{c} \right)")
                 
                 for lay_res in tens_layers:
@@ -283,7 +294,9 @@ def render_calculation_report(res):
                         st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = {fs_calc:.1f} \rightarrow \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
                     else:
                         st.latex(rf"f_s = {eps_s:.5f} \times 200,000 = \mathbf{{{fs:.1f}}} \text{{ MPa}} \text{{ ({status})}}")
-
+            else:
+                st.markdown("🟢 **เหล็กรับแรงดึง (Tension):**")
+                st.warning("ไม่มีเหล็กรับแรงดึง")
 # --- Ultimate Strength Limit State ---
         st.markdown("**4. Ultimate Flexural Capacity ($\phi M_n$) & Exact Moment Summation**")
         
