@@ -4,42 +4,93 @@ import io
 import numpy as np
 import textwrap
 
+def plot_detailed_stress_strain(b, h, c, a, fc, layer_res, is_top=False):
+    """
+    วาดกราฟแบบละเอียด 3 ส่วน: Cross Section, Strain Profile, และ Stress Profile
+    """
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10, 5), gridspec_kw={'width_ratios': [1, 1.2, 1.2]})
+    fig.subplots_adjust(wspace=0.1)
 
-def plot_stress_strain_diagram(b, h, d, c, a, fc):
-    """Generate a Matplotlib figure for Strain and Stress Block"""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 4), sharey=True)
+    # ตั้งค่ากราฟให้มองโครงสร้างให้ Compression อยู่ด้านบนเสมอเพื่อความเข้าใจง่าย
+    for ax in [ax1, ax2, ax3]:
+        ax.set_ylim(-0.1 * h, 1.1 * h)
+        ax.axis('off')
+
+    # ---------------------------------------------
+    # 1. หน้าตัด (Cross Section)
+    # ---------------------------------------------
+    ax1.set_title("Cross Section", fontsize=10, fontweight='bold', pad=10)
+    ax1.add_patch(patches.Rectangle((0, 0), b, h, fill=False, lw=1.5, edgecolor='black'))
     
-    # --- 1. Strain Profile (ax1) ---
-    ax1.plot([0, 0], [0, h], color='black', linewidth=1)
-    ax1.plot([0.003, -0.005], [h, h-d], color='blue', marker='o')
-    ax1.plot([0, 0.003], [h, h], color='blue', linestyle='--')
-    ax1.plot([0, -0.005], [h-d, h-d], color='blue', linestyle='--')
+    # วาดแกนสะเทิน (Neutral Axis)
+    na_y = h - c
+    ax1.plot([-0.2*b, 1.2*b], [na_y, na_y], 'k--', lw=1)
     
-    # Neutral Axis (N.A.)
-    ax1.axhline(y=h-c, color='red', linestyle='-.', alpha=0.5)
-    ax1.text(0, h-c, f' N.A. (c={c:.1f} mm)', color='red', va='bottom')
-    ax1.text(0.003, h, ' εc=0.003', color='blue', va='bottom')
+    # วาดเหล็กเสริม
+    for lr in layer_res:
+        di = lr['d_i']
+        y = h - di
+        color = '#ff4d4d' if lr['type'] == 'Tension' else '#4d79ff'
+        ax1.plot(b/2, y, 'o', color=color, markersize=8, markeredgecolor='black')
+        ax1.text(b + 10, y, f"d={di:.0f}", va='center', fontsize=8)
+
+    # ---------------------------------------------
+    # 2. Strain Profile (การกระจายความเครียด)
+    # ---------------------------------------------
+    ax2.set_title("Strain Profile", fontsize=10, fontweight='bold', pad=10)
+    ax2.plot([0, 0], [0, h], 'k-', lw=1) # เส้นอ้างอิงตรงกลาง
+    ax2.plot([-0.5, 0.5], [na_y, na_y], 'k--', lw=1, alpha=0.5) # แกนสะเทิน
     
-    ax1.set_title("Strain Profile")
-    ax1.axis('off')
+    eps_c = 0.003
+    # วาดรูปสามเหลี่ยม Strain ฝั่งคอนกรีต
+    ax2.plot([0, eps_c*1000], [na_y, h], 'b-', lw=1.5)
+    ax2.plot([0, eps_c*1000], [h, h], 'b-', lw=1.5)
+    ax2.text(eps_c*1000/2, h + 0.03*h, f"$\epsilon_c=0.003$", ha='center', fontsize=9, color='blue')
+
+    # วาด Strain ฝั่งเหล็กเสริม
+    for lr in layer_res:
+        di = lr['d_i']
+        y = h - di
+        eps_s = lr['eps_s']
+        # กลับด้านกราฟ: Tension (ดึง) ไปทางซ้าย, Compression (อัด) ไปทางขวา
+        x_val = -eps_s * 1000 if lr['type'] == 'Tension' else eps_s * 1000
+        
+        ax2.plot([0, x_val], [y, y], 'r--' if lr['type']=='Tension' else 'b--', alpha=0.5)
+        ax2.plot([0, x_val], [na_y, y], 'r-', lw=1.5 if lr['type']=='Tension' else 'b-')
+        ax2.text(x_val, y - 0.04*h, f"$\epsilon_s$={eps_s:.4f}", ha='center', fontsize=9, color='red' if lr['type']=='Tension' else 'blue')
+
+    # ---------------------------------------------
+    # 3. Stress Profile (การกระจายหน่วยแรง)
+    # ---------------------------------------------
+    ax3.set_title("Stress Profile", fontsize=10, fontweight='bold', pad=10)
+    ax3.plot([0, 0], [0, h], 'k-', lw=1)
+    ax3.plot([-0.5, 0.5], [na_y, na_y], 'k--', lw=1, alpha=0.5)
     
-    # --- 2. Stress Block (ax2) ---
-    ax2.plot([0, 0], [0, h], color='black', linewidth=1)
-    
-    # Whitney Stress Block (0.85fc')
+    # วาด Whitney Stress Block (a)
     stress_val = 0.85 * fc
-    rect = patches.Rectangle((0, h-a), stress_val, a, linewidth=1.5, edgecolor='#c0392b', facecolor='#e74c3c', alpha=0.5)
-    ax2.add_patch(rect)
+    ax3.add_patch(patches.Rectangle((0, h-a), 1, a, color='#4d79ff', alpha=0.3)) # ใช้ 1 เป็นสเกลความกว้าง
+    ax3.plot([1, 1], [h-a, h], 'b-', lw=1.5)
+    ax3.plot([0, 1], [h-a, h-a], 'b-', lw=1.5)
     
-    # Tension & Compression arrows
-    ax2.annotate('', xy=(stress_val, h-d), xytext=(0, h-d), arrowprops=dict(arrowstyle="->", color="green", lw=2))
-    ax2.text(stress_val, h-d, ' Ts', color='green', va='center')
-    ax2.annotate('', xy=(-stress_val/2, h-(a/2)), xytext=(0, h-(a/2)), arrowprops=dict(arrowstyle="<-", color="red", lw=2))
-    ax2.text(-stress_val/2, h-(a/2), ' Cc', color='red', va='center', ha='right')
-    
-    ax2.set_title("Equivalent Stress Block")
-    ax2.axis('off')
-    
+    ax3.text(0.5, h + 0.03*h, f"0.85f'c", ha='center', fontsize=9, color='blue')
+    ax3.text(1.1, h - a/2, f"a={a:.1f}", va='center', fontsize=9, color='blue')
+    ax3.text(-0.1, h - c, f"c={c:.1f}", va='center', ha='right', fontsize=9)
+
+    # วาดแรงในเหล็ก (fs)
+    for lr in layer_res:
+        di = lr['d_i']
+        y = h - di
+        fs = lr['fs']
+        
+        if lr['type'] == 'Tension':
+            # วาดลูกศรชี้ออกไปทางซ้าย (Tension)
+            ax3.annotate("", xy=(-1, y), xytext=(0, y), arrowprops=dict(arrowstyle="->", color="red", lw=1.5))
+            ax3.text(-0.5, y - 0.04*h, f"fs={fs:.0f} MPa", ha='center', fontsize=9, color='red')
+        else:
+            # วาดลูกศรชี้เข้าหาหน้าตัด (Compression)
+            ax3.annotate("", xy=(0.8, y), xytext=(0, y), arrowprops=dict(arrowstyle="->", color="blue", lw=1.5))
+            ax3.text(0.4, y - 0.04*h, f"f's={fs:.0f} MPa", ha='center', fontsize=9, color='blue')
+
     plt.tight_layout()
     return fig
 
