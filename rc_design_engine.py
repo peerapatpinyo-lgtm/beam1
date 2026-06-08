@@ -184,7 +184,7 @@ def get_phi_Mn_details_multi(bot_layers, top_layers, b, h, fc, fy, cover, stir_d
     Cc = 0.85 * fc * a * b
     
     Mn_Nmm = 0.0
-    Mn_Nmm += Cc * (a / 2) # โมเมนต์จากคอนกรีต (ทวนเข็ม เป็นบวก)
+    Mn_Nmm -= Cc * (a / 2)  # แรงอัดคอนกรีตกระทำที่ y=a/2 จาก comp face → ลบออกจาก moment sum
     
     layer_results = []
     
